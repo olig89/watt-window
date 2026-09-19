@@ -36,19 +36,38 @@
           "other_per_kwh": "Taxes and fees charged per kWh, e.g. renewable fee, excise, balancing charge."
         }
       },
-      "solar": {
-        "title": "Solar and your loads",
-        "description": "Optional: pick your Forecast.Solar setup so windows prefer times when your panels will cover the load.",
+      "loads": {
+        "title": "Your loads",
         "data": {
-          "solar_entry_id": "Forecast.Solar",
           "base_load_w": "Typical house load",
-          "load_w": "Power of the things you'll run in a window",
-          "has_battery": "I have a home battery"
+          "load_w": "Power of the things you'll run in a window"
         },
         "data_description": {
-          "base_load_w": "Solar goes to the house first; only what's left over counts as free-ish.",
-          "load_w": "e.g. about 1000 W for a dishwasher, 2000 W for a washing machine heating water.",
-          "has_battery": "Leave off for now. Battery-aware windows are coming in a later version; this setting is saved but doesn't change anything yet."
+          "base_load_w": "What the house draws on its own. With solar, the panels cover this first.",
+          "load_w": "e.g. about 1000 W for a dishwasher, 2000 W for a washing machine heating water. Used for cost estimates."
+        }
+      },
+      "solar_menu": {
+        "title": "Solar panels",
+        "description": "Do you want windows to take a solar forecast into account? You can change this later under Configure.{note}",
+        "menu_options": {
+          "solar": "Yes, use my Forecast.Solar setup",
+          "skip_solar": "Skip, no solar"
+        }
+      },
+      "solar": {
+        "title": "Solar forecast",
+        "description": "Pick your Forecast.Solar setup. Windows will prefer times when your panels are forecast to cover the load.",
+        "data": {
+          "solar_entry_id": "Forecast.Solar"
+        }
+      },
+      "battery_menu": {
+        "title": "Home battery",
+        "description": "Do you have a home battery? This is saved but doesn't change anything yet: battery-aware windows (storing spare solar for later) come in a later version.",
+        "menu_options": {
+          "battery": "Yes, I have a home battery",
+          "skip_battery": "Skip, no battery"
         }
       }
     },
@@ -94,23 +113,45 @@
           "export_fee": "Fee deducted from exported energy"
         }
       },
-      "solar": {
-        "title": "Solar and your loads",
-        "data": {
-          "solar_entry_id": "Forecast.Solar",
-          "base_load_w": "Typical house load",
-          "load_w": "Power of the things you'll run in a window",
-          "has_battery": "I have a home battery"
-        },
-        "data_description": {
-          "has_battery": "Leave off for now. Battery-aware windows are coming in a later version; this setting is saved but doesn't change anything yet."
-        }
-      },
       "windows": {
         "title": "Window lengths",
         "description": "Comma-separated, in hours, in steps of a quarter-hour. Each length gets its own sensors.",
         "data": {
           "hours": "Window lengths (hours)"
+        }
+      },
+      "loads": {
+        "title": "Your loads",
+        "data": {
+          "base_load_w": "Typical house load",
+          "load_w": "Power of the things you'll run in a window"
+        },
+        "data_description": {
+          "base_load_w": "What the house draws on its own. With solar, the panels cover this first.",
+          "load_w": "e.g. about 1000 W for a dishwasher, 2000 W for a washing machine heating water. Used for cost estimates."
+        }
+      },
+      "solar_menu": {
+        "title": "Solar panels",
+        "description": "Do you want windows to take a solar forecast into account? You can change this later under Configure.{note}",
+        "menu_options": {
+          "solar": "Yes, use my Forecast.Solar setup",
+          "skip_solar": "Skip, no solar"
+        }
+      },
+      "solar": {
+        "title": "Solar forecast",
+        "description": "Pick your Forecast.Solar setup. Windows will prefer times when your panels are forecast to cover the load.",
+        "data": {
+          "solar_entry_id": "Forecast.Solar"
+        }
+      },
+      "battery_menu": {
+        "title": "Home battery",
+        "description": "Do you have a home battery? This is saved but doesn't change anything yet: battery-aware windows (storing spare solar for later) come in a later version.",
+        "menu_options": {
+          "battery": "Yes, I have a home battery",
+          "skip_battery": "Skip, no battery"
         }
       }
     },

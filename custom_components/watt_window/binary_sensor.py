@@ -7,6 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .cleanup import remove_stale_entities
 from .const import window_label
 from .coordinator import WattWindowCoordinator
 from .sensor import device_info
@@ -14,7 +15,9 @@ from .sensor import device_info
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddConfigEntryEntitiesCallback) -> None:
     coord: WattWindowCoordinator = entry.runtime_data
-    async_add_entities(InWindowSensor(coord, m) for m in sorted(coord.data.windows))
+    entities = [InWindowSensor(coord, m) for m in sorted(coord.data.windows)]
+    remove_stale_entities(hass, entry.entry_id, "binary_sensor", (e.unique_id for e in entities))
+    async_add_entities(entities)
 
 
 class InWindowSensor(CoordinatorEntity[WattWindowCoordinator], BinarySensorEntity):

@@ -56,15 +56,21 @@ async def test_config_flow_creates_entry(hass, tallinn, nordpool):
          "weekends_night": True, "holidays_night": True, "vat_percent": 24,
          "margin": 0.006, "other_per_kwh": 0.02181, "export_fee": 0},
     )
-    assert result["step_id"] == "solar"
+    assert result["step_id"] == "loads"
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"base_load_w": 500, "load_w": 1000})
+    # No Forecast.Solar set up, so skipping is the only choice offered.
+    assert result["type"] is FlowResultType.MENU and result["menu_options"] == ["skip_solar"]
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "skip_solar"})
+    assert result["step_id"] == "battery_menu"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "skip_battery"})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     data = result["data"]
     assert data["country"] == "EE"
     assert data["tariff"]["vat"] == pytest.approx(0.24)
     assert data["windows"] == [60, 120, 240, 360]
-    assert data["has_battery"] is False  # no battery is the default
+    assert data["has_battery"] is False
+    assert data["solar_entry_id"] is None
 
 
 async def test_config_flow_needs_nordpool(hass):
@@ -174,6 +180,9 @@ async def test_panel_api_reads_and_saves_settings(hass, tallinn, nordpool, hass_
     await hass.async_block_till_done()
     assert entry.options["windows"] == [60, 90, 360]
     assert hass.states.get("sensor.watt_window_cheapest_1_5_h_window") is not None
+    # 2 h was removed: its sensors go, rather than lingering as "unavailable".
+    assert hass.states.get("sensor.watt_window_cheapest_2_h_window") is None
+    assert hass.states.get("binary_sensor.watt_window_in_cheapest_2_h_window") is None
 
     await ws.send_json({"id": 3, "type": "watt_window/save", "windows": [7]})
     msg = await ws.receive_json()
@@ -202,6 +211,8 @@ async def test_options_flow_edits_windows(hass, tallinn, nordpool):
          "margin": 0.006, "other_per_kwh": 0.02181, "export_fee": 0},
     )
     result = await hass.config_entries.options.async_configure(result["flow_id"], {"base_load_w": 400, "load_w": 2000})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "skip_solar"})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "skip_battery"})
     assert result["step_id"] == "windows"
     result = await hass.config_entries.options.async_configure(result["flow_id"], {"hours": "1, 3"})
     assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -227,3 +238,45 @@ async def test_panel_saves_a_tariff_and_prices_follow(hass, tallinn, nordpool, h
     await ws.send_json({"id": 2, "type": "watt_window/save", "tariff": bad})
     msg = await ws.receive_json()
     assert not msg["success"]
+
+
+@pytest.mark.freeze_time(NOW)
+async def test_config_flow_with_solar_and_battery(hass, tallinn, nordpool, forecast_solar):
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"area": "EE", "preset": "ee_vork1", "country": "EE"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"rate_flat": 0.0772, "vat_percent": 24, "margin": 0.006, "other_per_kwh": 0.02181, "export_fee": 0},
+    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"base_load_w": 500, "load_w": 1000})
+    assert result["menu_options"] == ["solar", "skip_solar"]
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "solar"})
+    assert result["step_id"] == "solar"
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"solar_entry_id": forecast_solar.entry_id})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "battery"})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"]["solar_entry_id"] == forecast_solar.entry_id
+    assert result["data"]["has_battery"] is True
+
+
+@pytest.mark.freeze_time(NOW)
+async def test_options_flow_can_turn_solar_off(hass, tallinn, nordpool, forecast_solar):
+    entry = await setup(hass, solar_entry_id=forecast_solar.entry_id)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"preset": "keep", "country": "EE"})
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"rate_day": 0.0607, "rate_night": 0.0351, "day_start": 7, "day_end": 22,
+         "weekends_night": True, "holidays_night": True, "vat_percent": 24,
+         "margin": 0, "other_per_kwh": 0.02181, "export_fee": 0},
+    )
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"base_load_w": 500, "load_w": 1000})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "skip_solar"})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "skip_battery"})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"hours": "1, 2"})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert entry.options["solar_entry_id"] is None
+    assert hass.states.get("sensor.watt_window_solar_forecast_now") is None

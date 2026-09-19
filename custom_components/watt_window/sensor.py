@@ -13,6 +13,7 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .cleanup import remove_stale_entities
 from .const import CONF_BASE_LOAD_W, CONF_LOAD_W, DEFAULT_BASE_LOAD_W, DEFAULT_LOAD_W, DOMAIN, NAME, window_label
 from .coordinator import WattWindowCoordinator
 
@@ -32,6 +33,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddC
     if coord.data.solar_configured:
         entities.append(SolarNowSensor(coord))
     entities += [WindowStartSensor(coord, m) for m in sorted(coord.data.windows)]
+    remove_stale_entities(hass, entry.entry_id, "sensor", (e.unique_id for e in entities))
     async_add_entities(entities)
 
 

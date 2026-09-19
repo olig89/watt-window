@@ -20,7 +20,9 @@ Once a window has started, it stays put. A price update mid-window will not move
 1. In HACS, open the menu (⋮) → **Custom repositories**. Add `https://github.com/olig89/watt-window` with type **Integration**.
 2. Search HACS for **Watt Window** (the main list only shows what you've already downloaded), open it and download it. Restart Home Assistant.
 3. Make sure **Nord Pool** is set up (Settings → Devices & services → Add integration → Nord Pool). Set up **Forecast.Solar** too if you have panels.
-4. Add the **Watt Window** integration and follow the three steps: price area and tariff preset, tariff details, solar and loads.
+4. Add the **Watt Window** integration: price area and tariff preset, tariff details, your loads, then two questions you can skip: solar panels and home battery.
+
+**Nord Pool is required** (it's where the prices come from). Solar and battery are optional and can be turned on or off later under **Configure**.
 
 **Watt Window** then appears in the sidebar (admins only).
 
@@ -72,7 +74,7 @@ automation:
 
 ## Home battery
 
-There's an **I have a home battery** switch (in setup, Configure and the Settings tab). It's saved but doesn't change anything yet. With a battery, spare solar can be stored for later instead of used straight away, which changes which window is cheapest. That logic comes in a later version. Leave it off for now.
+Setup asks whether you have a home battery (you can skip it), and there's a matching switch in Configure and on the Settings tab. It's saved but doesn't change anything yet. With a battery, spare solar can be stored for later instead of used straight away, which changes which window is cheapest. That logic comes in a later version. Leave it off for now.
 
 ## Limits
 

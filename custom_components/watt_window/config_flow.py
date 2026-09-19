@@ -1,7 +1,9 @@
 """Setup and options screens.
 
-Setup:   1 area + tariff preset + holiday country -> 2 tariff details -> 3 solar
-Options: the same tariff and solar steps (prefilled), then window lengths.
+Setup:   area + preset + holiday country -> tariff details -> loads
+         -> solar? (pick Forecast.Solar / skip) -> battery? (yes / skip)
+Options: the same steps (prefilled), then window lengths.
+Nord Pool is required (it is the price source); solar and battery can be skipped.
 The sidebar page edits the same settings; both write the entry's options.
 """
 
@@ -104,25 +106,93 @@ def _tariff_from_input(plan: str, user: dict) -> dict:
     return clean_tariff(t)
 
 
-def _solar_schema(s: dict) -> vol.Schema:
-    fields: dict[Any, Any] = {}
-    solar_key = (
-        vol.Optional(CONF_SOLAR_ENTRY, description={"suggested_value": s[CONF_SOLAR_ENTRY]})
-        if s.get(CONF_SOLAR_ENTRY)
-        else vol.Optional(CONF_SOLAR_ENTRY)
+def _loads_schema(s: dict) -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Required(CONF_BASE_LOAD_W, default=s.get(CONF_BASE_LOAD_W, DEFAULT_BASE_LOAD_W)): _watts(),
+            vol.Required(CONF_LOAD_W, default=s.get(CONF_LOAD_W, DEFAULT_LOAD_W)): _watts(),
+        }
     )
-    fields[solar_key] = ConfigEntrySelector(ConfigEntrySelectorConfig(integration=FORECAST_SOLAR_DOMAIN))
-    fields[vol.Required(CONF_BASE_LOAD_W, default=s.get(CONF_BASE_LOAD_W, DEFAULT_BASE_LOAD_W))] = _watts()
-    fields[vol.Required(CONF_LOAD_W, default=s.get(CONF_LOAD_W, DEFAULT_LOAD_W))] = _watts()
-    fields[vol.Required(CONF_HAS_BATTERY, default=bool(s.get(CONF_HAS_BATTERY, False)))] = BooleanSelector()
-    return vol.Schema(fields)
 
 
-class WattWindowConfigFlow(ConfigFlow, domain=DOMAIN):
+def _solar_schema(s: dict) -> vol.Schema:
+    key = (
+        vol.Required(CONF_SOLAR_ENTRY, default=s[CONF_SOLAR_ENTRY])
+        if s.get(CONF_SOLAR_ENTRY)
+        else vol.Required(CONF_SOLAR_ENTRY)
+    )
+    return vol.Schema({key: ConfigEntrySelector(ConfigEntrySelectorConfig(integration=FORECAST_SOLAR_DOMAIN))})
+
+
+class _SharedSteps:
+    """Steps both flows share: tariff, loads, and the yes/skip questions for solar and battery.
+
+    Answers collect in ``self._store``; each flow finishes in its own ``_after_battery``.
+    """
+
+    _store: dict[str, Any]
+
+    async def async_step_tariff(self, user_input: dict | None = None) -> ConfigFlowResult:
+        t = self._store[CONF_TARIFF]
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                self._store[CONF_TARIFF] = _tariff_from_input(t["network_plan"], user_input)
+                return await self.async_step_loads()
+            except SettingsError as err:
+                errors["base"] = err.key
+        return self.async_show_form(step_id="tariff", data_schema=_tariff_schema(t), errors=errors)
+
+    async def async_step_loads(self, user_input: dict | None = None) -> ConfigFlowResult:
+        if user_input is not None:
+            self._store[CONF_BASE_LOAD_W] = user_input[CONF_BASE_LOAD_W]
+            self._store[CONF_LOAD_W] = user_input[CONF_LOAD_W]
+            return await self.async_step_solar_menu()
+        return self.async_show_form(step_id="loads", data_schema=_loads_schema(self._store))
+
+    async def async_step_solar_menu(self, user_input: dict | None = None) -> ConfigFlowResult:
+        # Only offer "use solar" when there's a Forecast.Solar setup to pick.
+        has_forecast = bool(self.hass.config_entries.async_entries(FORECAST_SOLAR_DOMAIN))
+        return self.async_show_menu(
+            step_id="solar_menu",
+            menu_options=["solar", "skip_solar"] if has_forecast else ["skip_solar"],
+            description_placeholders={
+                "note": "" if has_forecast else
+                "\n\nNo Forecast.Solar setup was found. Add one under Settings > Devices & services, "
+                "then turn solar on later from Watt Window's Configure."
+            },
+        )
+
+    async def async_step_solar(self, user_input: dict | None = None) -> ConfigFlowResult:
+        if user_input is not None:
+            self._store[CONF_SOLAR_ENTRY] = user_input[CONF_SOLAR_ENTRY]
+            return await self.async_step_battery_menu()
+        return self.async_show_form(step_id="solar", data_schema=_solar_schema(self._store))
+
+    async def async_step_skip_solar(self, user_input: dict | None = None) -> ConfigFlowResult:
+        self._store[CONF_SOLAR_ENTRY] = None
+        return await self.async_step_battery_menu()
+
+    async def async_step_battery_menu(self, user_input: dict | None = None) -> ConfigFlowResult:
+        return self.async_show_menu(step_id="battery_menu", menu_options=["battery", "skip_battery"])
+
+    async def async_step_battery(self, user_input: dict | None = None) -> ConfigFlowResult:
+        self._store[CONF_HAS_BATTERY] = True
+        return await self._after_battery()
+
+    async def async_step_skip_battery(self, user_input: dict | None = None) -> ConfigFlowResult:
+        self._store[CONF_HAS_BATTERY] = False
+        return await self._after_battery()
+
+    async def _after_battery(self) -> ConfigFlowResult:
+        raise NotImplementedError
+
+
+class WattWindowConfigFlow(_SharedSteps, ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self) -> None:
-        self._data: dict[str, Any] = {}
+        self._store: dict[str, Any] = {}
 
     @staticmethod
     @callback
@@ -135,7 +205,7 @@ class WattWindowConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="no_nordpool")
         areas = list(np_entries[0].data.get("areas") or [])
         if user_input is not None:
-            self._data = {
+            self._store = {
                 CONF_AREA: user_input[CONF_AREA],
                 CONF_COUNTRY: (user_input.get(CONF_COUNTRY) or "").strip().upper(),
                 CONF_PRESET: user_input[CONF_PRESET],
@@ -155,46 +225,27 @@ class WattWindowConfigFlow(ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(step_id="user", data_schema=schema)
 
-    async def async_step_tariff(self, user_input: dict | None = None) -> ConfigFlowResult:
-        t = self._data[CONF_TARIFF]
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            try:
-                self._data[CONF_TARIFF] = _tariff_from_input(t["network_plan"], user_input)
-                return await self.async_step_solar()
-            except SettingsError as err:
-                errors["base"] = err.key
-        return self.async_show_form(step_id="tariff", data_schema=_tariff_schema(t), errors=errors)
-
-    async def async_step_solar(self, user_input: dict | None = None) -> ConfigFlowResult:
-        if user_input is not None:
-            self._data.update(
-                {
-                    CONF_SOLAR_ENTRY: user_input.get(CONF_SOLAR_ENTRY) or None,
-                    CONF_BASE_LOAD_W: user_input[CONF_BASE_LOAD_W],
-                    CONF_LOAD_W: user_input[CONF_LOAD_W],
-                    CONF_HAS_BATTERY: user_input.get(CONF_HAS_BATTERY, False),
-                    CONF_WINDOWS: list(DEFAULT_WINDOWS),
-                }
-            )
-            return self.async_create_entry(title=NAME, data=self._data)
-        return self.async_show_form(step_id="solar", data_schema=_solar_schema(self._data))
+    async def _after_battery(self) -> ConfigFlowResult:
+        self._store[CONF_WINDOWS] = list(DEFAULT_WINDOWS)
+        return self.async_create_entry(title=NAME, data=self._store)
 
 
-class WattWindowOptionsFlow(OptionsFlow):
+class WattWindowOptionsFlow(_SharedSteps, OptionsFlow):
     def __init__(self) -> None:
-        self._opts: dict[str, Any] = {}
+        self._store: dict[str, Any] = {}
 
     async def async_step_init(self, user_input: dict | None = None) -> ConfigFlowResult:
         current = settings_of(self.config_entry)
         if user_input is not None:
-            self._opts = dict(self.config_entry.options)
+            self._store = dict(self.config_entry.options)
+            self._store[CONF_TARIFF] = current[CONF_TARIFF]
+            self._store[CONF_WINDOWS] = current.get(CONF_WINDOWS) or list(DEFAULT_WINDOWS)
+            for key in (CONF_BASE_LOAD_W, CONF_LOAD_W, CONF_SOLAR_ENTRY):
+                self._store.setdefault(key, current.get(key))
             if user_input[CONF_PRESET] != KEEP:
-                self._opts[CONF_PRESET] = user_input[CONF_PRESET]
-                self._opts[CONF_TARIFF] = tariff_from_preset(user_input[CONF_PRESET])
-            else:
-                self._opts[CONF_TARIFF] = current[CONF_TARIFF]
-            self._opts[CONF_COUNTRY] = (user_input.get(CONF_COUNTRY) or "").strip().upper()
+                self._store[CONF_PRESET] = user_input[CONF_PRESET]
+                self._store[CONF_TARIFF] = tariff_from_preset(user_input[CONF_PRESET])
+            self._store[CONF_COUNTRY] = (user_input.get(CONF_COUNTRY) or "").strip().upper()
             return await self.async_step_tariff()
         schema = vol.Schema(
             {
@@ -204,36 +255,18 @@ class WattWindowOptionsFlow(OptionsFlow):
         )
         return self.async_show_form(step_id="init", data_schema=schema)
 
-    async def async_step_tariff(self, user_input: dict | None = None) -> ConfigFlowResult:
-        t = self._opts[CONF_TARIFF]
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            try:
-                self._opts[CONF_TARIFF] = _tariff_from_input(t["network_plan"], user_input)
-                return await self.async_step_solar()
-            except SettingsError as err:
-                errors["base"] = err.key
-        return self.async_show_form(step_id="tariff", data_schema=_tariff_schema(t), errors=errors)
-
-    async def async_step_solar(self, user_input: dict | None = None) -> ConfigFlowResult:
-        if user_input is not None:
-            self._opts[CONF_SOLAR_ENTRY] = user_input.get(CONF_SOLAR_ENTRY) or None
-            self._opts[CONF_BASE_LOAD_W] = user_input[CONF_BASE_LOAD_W]
-            self._opts[CONF_LOAD_W] = user_input[CONF_LOAD_W]
-            self._opts[CONF_HAS_BATTERY] = user_input.get(CONF_HAS_BATTERY, False)
-            return await self.async_step_windows()
-        return self.async_show_form(step_id="solar", data_schema=_solar_schema(settings_of(self.config_entry)))
+    async def _after_battery(self) -> ConfigFlowResult:
+        return await self.async_step_windows()
 
     async def async_step_windows(self, user_input: dict | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             try:
-                self._opts[CONF_WINDOWS] = parse_hours_list(user_input["hours"])
-                return self.async_create_entry(data=self._opts)
+                self._store[CONF_WINDOWS] = parse_hours_list(user_input["hours"])
+                return self.async_create_entry(data=self._store)
             except SettingsError as err:
                 errors["base"] = err.key
-        current = settings_of(self.config_entry).get(CONF_WINDOWS) or DEFAULT_WINDOWS
-        text = ", ".join(f"{m / 60:g}" for m in current)
+        text = ", ".join(f"{m / 60:g}" for m in self._store[CONF_WINDOWS])
         return self.async_show_form(
             step_id="windows",
             data_schema=vol.Schema({vol.Required("hours", default=text): TextSelector()}),
