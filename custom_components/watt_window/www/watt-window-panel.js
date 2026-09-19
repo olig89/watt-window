@@ -268,6 +268,7 @@ class WattWindowPanel extends HTMLElement {
         windows: [...(s.windows || [])],
         load_w: s.load_w,
         base_load_w: s.base_load_w,
+        has_battery: !!s.has_battery,
         tariff: JSON.parse(JSON.stringify(s.tariff)),
       };
     }
@@ -296,6 +297,8 @@ class WattWindowPanel extends HTMLElement {
           <label>Power of the things you run in a window (W)<input type="number" min="0" step="50" data-f="load_w" value="${f.load_w}"></label>
           <label>Typical house load (W)<input type="number" min="0" step="50" data-f="base_load_w" value="${f.base_load_w}"></label>
         </div>
+        <label class="check"><input type="checkbox" id="battery" ${f.has_battery ? "checked" : ""}> I have a home battery</label>
+        <p class="s">Leave this off for now. Battery-aware windows (store spare solar for later instead of using it straight away) come in a later version; the setting is saved but changes nothing yet.</p>
         <p class="s">Solar covers the house load first; only the rest counts towards running your load cheaply.
         Solar source: <b>${d.solar.configured ? esc(d.solar.title || "Forecast.Solar") : "none"}</b> —
         <a href="/config/integrations/integration/watt_window">change it in the integration settings</a>.</p>
@@ -340,6 +343,7 @@ class WattWindowPanel extends HTMLElement {
       if (k === "vat_pct") f.tariff.vat = Number(i.value) / 100;
       else f.tariff[k] = Number(i.value);
     }));
+    this.shadowRoot.getElementById("battery").addEventListener("change", (e) => (f.has_battery = e.target.checked));
     $("[data-tb]").forEach((i) => i.addEventListener("change", () => (f.tariff[i.dataset.tb] = i.checked)));
     this.shadowRoot.getElementById("save").addEventListener("click", () => this._save());
   }
@@ -353,6 +357,7 @@ class WattWindowPanel extends HTMLElement {
         windows: this._draft.windows,
         load_w: this._draft.load_w,
         base_load_w: this._draft.base_load_w,
+        has_battery: this._draft.has_battery,
         tariff: this._draft.tariff,
       });
       this._notice = { ok: true, text: "Saved. Watt Window has recalculated with your new settings." };

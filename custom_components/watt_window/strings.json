@@ -42,11 +42,13 @@
         "data": {
           "solar_entry_id": "Forecast.Solar",
           "base_load_w": "Typical house load",
-          "load_w": "Power of the things you'll run in a window"
+          "load_w": "Power of the things you'll run in a window",
+          "has_battery": "I have a home battery"
         },
         "data_description": {
           "base_load_w": "Solar goes to the house first; only what's left over counts as free-ish.",
-          "load_w": "e.g. about 1000 W for a dishwasher, 2000 W for a washing machine heating water."
+          "load_w": "e.g. about 1000 W for a dishwasher, 2000 W for a washing machine heating water.",
+          "has_battery": "Leave off for now. Battery-aware windows are coming in a later version; this setting is saved but doesn't change anything yet."
         }
       }
     },
@@ -97,7 +99,11 @@
         "data": {
           "solar_entry_id": "Forecast.Solar",
           "base_load_w": "Typical house load",
-          "load_w": "Power of the things you'll run in a window"
+          "load_w": "Power of the things you'll run in a window",
+          "has_battery": "I have a home battery"
+        },
+        "data_description": {
+          "has_battery": "Leave off for now. Battery-aware windows are coming in a later version; this setting is saved but doesn't change anything yet."
         }
       },
       "windows": {
@@ -119,14 +125,26 @@
   },
   "entity": {
     "sensor": {
-      "import_price": { "name": "Price now" },
-      "export_price": { "name": "Export price now" },
-      "effective_price": { "name": "Price now after solar" },
-      "solar_forecast": { "name": "Solar forecast now" },
-      "window_start": { "name": "Cheapest {length} window" }
+      "import_price": {
+        "name": "Price now"
+      },
+      "export_price": {
+        "name": "Export price now"
+      },
+      "effective_price": {
+        "name": "Price now after solar"
+      },
+      "solar_forecast": {
+        "name": "Solar forecast now"
+      },
+      "window_start": {
+        "name": "Cheapest {length} window"
+      }
     },
     "binary_sensor": {
-      "in_window": { "name": "In cheapest {length} window" }
+      "in_window": {
+        "name": "In cheapest {length} window"
+      }
     }
   }
 }

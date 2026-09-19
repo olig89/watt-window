@@ -11,6 +11,8 @@ CONF_PRESET = "preset"
 CONF_TARIFF = "tariff"
 CONF_SOLAR_ENTRY = "solar_entry_id"
 CONF_BASE_LOAD_W = "base_load_w"
+# Saved now; the battery logic (bank surplus solar vs use it at once) comes later.
+CONF_HAS_BATTERY = "has_battery"
 CONF_LOAD_W = "load_w"
 CONF_WINDOWS = "windows"  # list of window lengths in minutes
 

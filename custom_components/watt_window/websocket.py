@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant, callback
 
 from .const import (
     CONF_BASE_LOAD_W,
+    CONF_HAS_BATTERY,
     CONF_LOAD_W,
     CONF_SOLAR_ENTRY,
     CONF_TARIFF,
@@ -96,6 +97,7 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
                 "windows": s.get(CONF_WINDOWS),
                 "base_load_w": base_w,
                 "load_w": load_w,
+                "has_battery": bool(s.get(CONF_HAS_BATTERY, False)),
             },
         },
     )
@@ -108,6 +110,7 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
         vol.Optional("windows"): [vol.Coerce(int)],
         vol.Optional("base_load_w"): vol.Coerce(float),
         vol.Optional("load_w"): vol.Coerce(float),
+        vol.Optional("has_battery"): bool,
     }
 )
 @websocket_api.require_admin
@@ -128,6 +131,8 @@ async def ws_save(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
                 if not 0 <= msg[key] <= 100_000:
                     raise SettingsError("bad_watts", key)
                 options[key] = msg[key]
+        if "has_battery" in msg:
+            options[CONF_HAS_BATTERY] = msg["has_battery"]
     except SettingsError as err:
         connection.send_error(msg["id"], err.key, str(err))
         return

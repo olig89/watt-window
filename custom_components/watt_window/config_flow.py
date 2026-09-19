@@ -31,6 +31,7 @@ from .const import (
     CONF_AREA,
     CONF_BASE_LOAD_W,
     CONF_COUNTRY,
+    CONF_HAS_BATTERY,
     CONF_LOAD_W,
     CONF_PRESET,
     CONF_SOLAR_ENTRY,
@@ -113,6 +114,7 @@ def _solar_schema(s: dict) -> vol.Schema:
     fields[solar_key] = ConfigEntrySelector(ConfigEntrySelectorConfig(integration=FORECAST_SOLAR_DOMAIN))
     fields[vol.Required(CONF_BASE_LOAD_W, default=s.get(CONF_BASE_LOAD_W, DEFAULT_BASE_LOAD_W))] = _watts()
     fields[vol.Required(CONF_LOAD_W, default=s.get(CONF_LOAD_W, DEFAULT_LOAD_W))] = _watts()
+    fields[vol.Required(CONF_HAS_BATTERY, default=bool(s.get(CONF_HAS_BATTERY, False)))] = BooleanSelector()
     return vol.Schema(fields)
 
 
@@ -171,6 +173,7 @@ class WattWindowConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_SOLAR_ENTRY: user_input.get(CONF_SOLAR_ENTRY) or None,
                     CONF_BASE_LOAD_W: user_input[CONF_BASE_LOAD_W],
                     CONF_LOAD_W: user_input[CONF_LOAD_W],
+                    CONF_HAS_BATTERY: user_input.get(CONF_HAS_BATTERY, False),
                     CONF_WINDOWS: list(DEFAULT_WINDOWS),
                 }
             )
@@ -217,6 +220,7 @@ class WattWindowOptionsFlow(OptionsFlow):
             self._opts[CONF_SOLAR_ENTRY] = user_input.get(CONF_SOLAR_ENTRY) or None
             self._opts[CONF_BASE_LOAD_W] = user_input[CONF_BASE_LOAD_W]
             self._opts[CONF_LOAD_W] = user_input[CONF_LOAD_W]
+            self._opts[CONF_HAS_BATTERY] = user_input.get(CONF_HAS_BATTERY, False)
             return await self.async_step_windows()
         return self.async_show_form(step_id="solar", data_schema=_solar_schema(settings_of(self.config_entry)))
 

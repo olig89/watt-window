@@ -64,6 +64,7 @@ async def test_config_flow_creates_entry(hass, tallinn, nordpool):
     assert data["country"] == "EE"
     assert data["tariff"]["vat"] == pytest.approx(0.24)
     assert data["windows"] == [60, 120, 240, 360]
+    assert data["has_battery"] is False  # no battery is the default
 
 
 async def test_config_flow_needs_nordpool(hass):
@@ -177,6 +178,15 @@ async def test_panel_api_reads_and_saves_settings(hass, tallinn, nordpool, hass_
     await ws.send_json({"id": 3, "type": "watt_window/save", "windows": [7]})
     msg = await ws.receive_json()
     assert not msg["success"] and msg["error"]["code"] == "bad_window"
+
+    await ws.send_json({"id": 4, "type": "watt_window/save", "has_battery": True})
+    msg = await ws.receive_json()
+    assert msg["success"], msg
+    await hass.async_block_till_done()
+    assert entry.options["has_battery"] is True
+    await ws.send_json({"id": 5, "type": "watt_window/data"})
+    msg = await ws.receive_json()
+    assert msg["result"]["settings"]["has_battery"] is True
 
 
 @pytest.mark.freeze_time(NOW)
