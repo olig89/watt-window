@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant, callback
 
 from .const import (
     CONF_BASE_LOAD_W,
+    CONF_CAN_EXPORT,
     CONF_DAY_END,
     CONF_DAY_START,
     CONF_HAS_BATTERY,
@@ -135,6 +136,7 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
                 "day_start": int(s.get(CONF_DAY_START, DEFAULT_DAY_START)),
                 "day_end": int(s.get(CONF_DAY_END, DEFAULT_DAY_END)),
                 "solar_source": solar_source_kind(s),
+                "can_export": bool(s.get(CONF_CAN_EXPORT, True)),
                 "solar_planes": s.get(CONF_PLANES) or [],
                 "solar_entry_ids": chosen,
                 "solar_options": solar_options,
@@ -155,6 +157,7 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
         vol.Optional("day_end"): vol.Coerce(int),
         vol.Optional("solar_entry_ids"): [str],
         vol.Optional("solar_source"): vol.In(SOLAR_SOURCES),
+        vol.Optional("can_export"): bool,
         vol.Optional("solar_planes"): [dict],
     }
 )
@@ -191,6 +194,8 @@ async def ws_save(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
             if any(i not in known for i in ids):
                 raise SettingsError("bad_solar")
             options[CONF_SOLAR_ENTRIES] = ids
+        if "can_export" in msg:
+            options[CONF_CAN_EXPORT] = msg["can_export"]
         if "solar_planes" in msg:
             options[CONF_PLANES] = clean_planes(msg["solar_planes"])
         if "solar_source" in msg:

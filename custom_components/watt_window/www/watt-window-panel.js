@@ -168,7 +168,9 @@ class WattWindowPanel extends HTMLElement {
         <p class="explain"><b>Why the chart stops where it does:</b> ${esc(d.price_source)} sets tomorrow's prices once a day, at an auction that closes at noon Central European time; they're published about 45 minutes later${d.next_prices_at ? ` (${this._when(d.next_prices_at)} your time)` : ""}. Before that, nobody knows prices beyond midnight CET, so the furthest anyone can see is roughly a day and a half, and some mornings less than a day.</p>
         ${d.solar.credit ? `<p class="explain credit">Solar estimate: ${esc(d.solar.credit)}.</p>` : ""}
         <p class="explain">Each bar is the price of one quarter-hour: ${esc(d.price_source)} spot plus your network rate, fees and VAT.
-        ${d.solar.configured ? "Where your panels are forecast to produce more than your typical house load, the spare output covers the load first, so that part only costs the export price you'd otherwise have earned." : ""}
+        ${d.solar.configured ? (d.settings.can_export
+        ? "Where your panels are forecast to produce more than your typical house load, the spare output covers the load first, so that part only costs the export price you'd otherwise have earned."
+        : "Where your panels are forecast to produce more than your typical house load, the spare output covers the load first. Your system doesn't export, so that spare power would otherwise be lost: using it is free.") : ""}
         A Watt Window is the run of quarter-hours with the lowest average. Once a Watt Window has started it stays put, even if prices change.</p>
       </div>`;
   }
@@ -304,6 +306,7 @@ class WattWindowPanel extends HTMLElement {
         day_end: s.day_end,
         solar_entry_ids: [...(s.solar_entry_ids || [])],
         solar_source: s.solar_source || "none",
+        can_export: s.can_export !== false,
         solar_planes: JSON.parse(JSON.stringify(s.solar_planes || [])),
         tariff: JSON.parse(JSON.stringify(s.tariff)),
       };
@@ -346,6 +349,8 @@ class WattWindowPanel extends HTMLElement {
           ? `<p class="s">Tick the Forecast.Solar setup that covers your panels. If you tick more than one, their forecasts are added up.</p>
              ${d.settings.solar_options.map((o) => `<label class="check"><input type="checkbox" data-solar="${esc(o.entry_id)}" ${f.solar_entry_ids.includes(o.entry_id) ? "checked" : ""}> ${esc(o.title)}</label>`).join("")}`
           : `<p class="s">No Forecast.Solar setup yet. <a href="/config/integrations/dashboard/add?domain=forecast_solar">Add Forecast.Solar</a>, then come back here and tick it.</p>`) : ""}
+        ${f.solar_source !== "none" ? `<label class="check" style="margin-top:12px"><input type="checkbox" id="canexport" ${f.can_export ? "checked" : ""}> My system sends spare power to the grid</label>
+        <p class="s">Leave on if you're paid for (or can send) power you don't use. Turn off if your inverter holds the panels back instead (&quot;zero export&quot;): then spare solar is simply lost, so using it is free.</p>` : ""}
         <div class="grid" style="margin-top:12px">
           <label>What your house uses on its own (W)<input type="number" min="0" step="50" data-f="base_load_w" value="${f.base_load_w}"></label>
         </div>
@@ -437,6 +442,8 @@ class WattWindowPanel extends HTMLElement {
       f.solar_planes.splice(Number(b.dataset.rmplane), 1);
       this._render();
     }));
+    const canExport = this.shadowRoot.getElementById("canexport");
+    if (canExport) canExport.addEventListener("change", (e) => (f.can_export = e.target.checked));
     const addPlane = this.shadowRoot.getElementById("addplane");
     if (addPlane) addPlane.addEventListener("click", () => {
       f.solar_planes.push({ name: `Plane ${f.solar_planes.length + 1}`, kwp: 2, tilt: 35, direction: 180 });
@@ -464,6 +471,7 @@ class WattWindowPanel extends HTMLElement {
         day_end: this._draft.day_end,
         solar_entry_ids: this._draft.solar_entry_ids,
         solar_source: this._draft.solar_source,
+        can_export: this._draft.can_export,
         ...(this._draft.solar_source === "open_meteo" ? { solar_planes: this._draft.solar_planes } : {}),
         tariff: this._draft.tariff,
       });

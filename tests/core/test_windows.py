@@ -133,3 +133,17 @@ def test_flat_cheap_stretch_reports_how_late_you_can_start():
     assert w.latest_start == t0 + timedelta(hours=5)  # 2 h run still inside the flat 7 h
     one_off = cheapest_window(qs[:8] + [], timedelta(hours=2), load_w=1000)
     assert one_off.latest_start == one_off.start  # only one start fits
+
+
+
+def test_spare_solar_is_worth_the_export_price_only_if_you_can_export():
+    from datetime import datetime, timezone
+    from custom_components.watt_window.core.windows import Quarter
+
+    t = datetime(2026, 9, 21, 10, 0, tzinfo=timezone.utc)
+    common = dict(start=t, end=t, spot=0.1, import_price=0.2, export_price=0.1, solar_w=3000.0, tariff_key="day")
+    exporting = Quarter(**common, surplus_value=0.1)
+    zero_export = Quarter(**common, surplus_value=0.0)
+    # 1 kW load, 500 W house: 2.5 kW spare covers it all.
+    assert exporting.effective_price(1000, 500) == 0.1
+    assert zero_export.effective_price(1000, 500) == 0.0

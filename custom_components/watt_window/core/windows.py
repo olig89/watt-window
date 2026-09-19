@@ -31,13 +31,18 @@ class Quarter:
     export_price: float
     solar_w: float
     tariff_key: str
+    # What a kWh of spare solar is worth if you don't use it: the export price
+    # when the system can export, nothing when the inverter throttles the panels
+    # instead (zero-export). Using spare solar costs exactly this.
+    surplus_value: float | None = None
 
     def effective_price(self, load_w: float, base_load_w: float) -> float:
         if load_w <= 0:
             return self.import_price
         surplus = max(self.solar_w - base_load_w, 0.0)
         covered = min(load_w, surplus)
-        return (covered * self.export_price + (load_w - covered) * self.import_price) / load_w
+        value = self.export_price if self.surplus_value is None else self.surplus_value
+        return (covered * value + (load_w - covered) * self.import_price) / load_w
 
 
 @dataclass(frozen=True)
@@ -62,6 +67,7 @@ def price_quarters(
     cfg: Mapping,
     holidays: Collection[date] = (),
     solar_w: Mapping[datetime, float] | None = None,
+    can_export: bool = True,
 ) -> list[Quarter]:
     """Delivered prices for each spot interval, split to quarter-hours.
 
@@ -74,15 +80,17 @@ def price_quarters(
         t = iv.start
         while t < iv.end:
             end = min(t + QUARTER, iv.end)
+            exp = export_price(iv.spot, cfg)
             out.append(
                 Quarter(
                     start=t,
                     end=end,
                     spot=iv.spot,
                     import_price=import_price(iv.spot, t, cfg, holidays),
-                    export_price=export_price(iv.spot, cfg),
+                    export_price=exp,
                     solar_w=float(solar_w.get(t, 0.0)),
                     tariff_key=tariff_key(t, cfg, holidays),
+                    surplus_value=exp if can_export else 0.0,
                 )
             )
             t = end

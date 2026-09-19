@@ -50,10 +50,12 @@
         "description": "Pick your Forecast.Solar setup. If you tick more than one, their forecasts are added up.",
         "data": {
           "solar_entry_ids": "Forecast.Solar setups",
-          "base_load_w": "What your house uses on its own"
+          "base_load_w": "What your house uses on its own",
+          "can_export": "My system sends spare power to the grid"
         },
         "data_description": {
-          "base_load_w": "Your panels power the house first; only what's left over makes a Watt Window cheaper. If you don't know, leave 500 W. You can read the real figure from your energy dashboard at night, when nothing big is running."
+          "base_load_w": "Your panels power the house first; only what's left over makes a Watt Window cheaper. If you don't know, leave 500 W. You can read the real figure from your energy dashboard at night, when nothing big is running.",
+          "can_export": "Leave on if you're paid for (or can send) power you don't use. Turn off if your inverter holds the panels back instead (\"zero export\"): then spare solar is simply lost, so using it is free."
         }
       },
       "battery_menu": {
@@ -69,11 +71,13 @@
         "description": "One rough number is enough to start. Watt Window assumes a south-facing roof at 35° until you tell it more: add each roof plane's tilt and direction later on the Settings tab if you know them.",
         "data": {
           "kwp": "Total panel size",
-          "base_load_w": "What your house uses on its own"
+          "base_load_w": "What your house uses on its own",
+          "can_export": "My system sends spare power to the grid"
         },
         "data_description": {
           "kwp": "The kWp on your installation paperwork or inverter app. A guess is fine: e.g. 12 panels of 400 W = 4.8 kWp.",
-          "base_load_w": "Your panels power the house first; only what's left over makes a Watt Window cheaper. If you don't know, leave 500 W."
+          "base_load_w": "Your panels power the house first; only what's left over makes a Watt Window cheaper. If you don't know, leave 500 W.",
+          "can_export": "Leave on if you're paid for (or can send) power you don't use. Turn off if your inverter holds the panels back instead (\"zero export\"): then spare solar is simply lost, so using it is free."
         }
       }
     },
@@ -143,10 +147,12 @@
         "description": "Pick your Forecast.Solar setup. If you tick more than one, their forecasts are added up.",
         "data": {
           "solar_entry_ids": "Forecast.Solar setups",
-          "base_load_w": "What your house uses on its own"
+          "base_load_w": "What your house uses on its own",
+          "can_export": "My system sends spare power to the grid"
         },
         "data_description": {
-          "base_load_w": "Your panels power the house first; only what's left over makes a Watt Window cheaper. If you don't know, leave 500 W. You can read the real figure from your energy dashboard at night, when nothing big is running."
+          "base_load_w": "Your panels power the house first; only what's left over makes a Watt Window cheaper. If you don't know, leave 500 W. You can read the real figure from your energy dashboard at night, when nothing big is running.",
+          "can_export": "Leave on if you're paid for (or can send) power you don't use. Turn off if your inverter holds the panels back instead (\"zero export\"): then spare solar is simply lost, so using it is free."
         }
       },
       "battery_menu": {
@@ -162,11 +168,13 @@
         "description": "One rough number is enough to start. Watt Window assumes a south-facing roof at 35° until you tell it more: add each roof plane's tilt and direction later on the Settings tab if you know them.",
         "data": {
           "kwp": "Total panel size",
-          "base_load_w": "What your house uses on its own"
+          "base_load_w": "What your house uses on its own",
+          "can_export": "My system sends spare power to the grid"
         },
         "data_description": {
           "kwp": "The kWp on your installation paperwork or inverter app. A guess is fine: e.g. 12 panels of 400 W = 4.8 kWp.",
-          "base_load_w": "Your panels power the house first; only what's left over makes a Watt Window cheaper. If you don't know, leave 500 W."
+          "base_load_w": "Your panels power the house first; only what's left over makes a Watt Window cheaper. If you don't know, leave 500 W.",
+          "can_export": "Leave on if you're paid for (or can send) power you don't use. Turn off if your inverter holds the panels back instead (\"zero export\"): then spare solar is simply lost, so using it is free."
         }
       }
     },

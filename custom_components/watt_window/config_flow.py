@@ -31,6 +31,7 @@ from homeassistant.helpers.selector import (
 from .const import (
     CONF_AREA,
     CONF_BASE_LOAD_W,
+    CONF_CAN_EXPORT,
     CONF_COUNTRY,
     CONF_HAS_BATTERY,
     CONF_LOAD_W,
@@ -124,6 +125,7 @@ def _solar_schema(hass, s: dict) -> vol.Schema:
             ),
             # Only matters with solar: the panels cover this first, the rest is spare.
             vol.Required(CONF_BASE_LOAD_W, default=s.get(CONF_BASE_LOAD_W, DEFAULT_BASE_LOAD_W)): _watts(),
+            vol.Required(CONF_CAN_EXPORT, default=s.get(CONF_CAN_EXPORT, True)): BooleanSelector(),
         }
     )
 
@@ -169,6 +171,7 @@ class _SharedSteps:
             self._store[CONF_SOLAR_SOURCE] = "open_meteo"
             self._store[CONF_PLANES] = planes
             self._store[CONF_BASE_LOAD_W] = user_input[CONF_BASE_LOAD_W]
+            self._store[CONF_CAN_EXPORT] = user_input.get(CONF_CAN_EXPORT, True)
             return await self.async_step_battery_menu()
         schema = vol.Schema(
             {
@@ -176,6 +179,7 @@ class _SharedSteps:
                     NumberSelectorConfig(min=0.1, max=1000, step=0.1, unit_of_measurement="kWp", mode=NumberSelectorMode.BOX)
                 ),
                 vol.Required(CONF_BASE_LOAD_W, default=self._store.get(CONF_BASE_LOAD_W, DEFAULT_BASE_LOAD_W)): _watts(),
+                vol.Required(CONF_CAN_EXPORT, default=self._store.get(CONF_CAN_EXPORT, True)): BooleanSelector(),
             }
         )
         return self.async_show_form(step_id="estimate", data_schema=schema)
@@ -185,6 +189,7 @@ class _SharedSteps:
             self._store[CONF_SOLAR_SOURCE] = "forecast_solar"
             self._store[CONF_SOLAR_ENTRIES] = list(user_input[CONF_SOLAR_ENTRIES])
             self._store[CONF_BASE_LOAD_W] = user_input[CONF_BASE_LOAD_W]
+            self._store[CONF_CAN_EXPORT] = user_input.get(CONF_CAN_EXPORT, True)
             return await self.async_step_battery_menu()
         return self.async_show_form(step_id="solar", data_schema=_solar_schema(self.hass, self._store))
 
@@ -271,7 +276,7 @@ class WattWindowOptionsFlow(_SharedSteps, OptionsFlow):
             self._store = dict(self.config_entry.options)
             self._store[CONF_TARIFF] = current[CONF_TARIFF]
             self._store[CONF_WINDOWS] = current.get(CONF_WINDOWS) or list(DEFAULT_WINDOWS)
-            for key in (CONF_BASE_LOAD_W, CONF_LOAD_W, CONF_HAS_BATTERY):
+            for key in (CONF_BASE_LOAD_W, CONF_LOAD_W, CONF_HAS_BATTERY, CONF_CAN_EXPORT):
                 self._store.setdefault(key, current.get(key))
             self._store[CONF_SOLAR_ENTRIES] = solar_entry_ids(current)
             self._store[CONF_PLANES] = current.get(CONF_PLANES) or []

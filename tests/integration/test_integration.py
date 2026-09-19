@@ -415,12 +415,14 @@ async def test_setup_can_estimate_solar_from_one_number(hass, tallinn, nordpool,
     )
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "estimate"})
     assert result["step_id"] == "estimate"
-    assert set(result["data_schema"].schema) == {"kwp", "base_load_w"}  # nothing else asked up front
+    # Only the size is needed; house load and exporting come pre-set.
+    assert set(result["data_schema"].schema) == {"kwp", "base_load_w", "can_export"}
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {"kwp": 4.8, "base_load_w": 500})
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "skip_battery"})
     data = result["data"]
     assert data["solar_source"] == "open_meteo"
     assert data["solar_planes"] == [{"name": "Panels", "kwp": 4.8, "tilt": 35, "direction": 180}]
+    assert data["can_export"] is True
 
 
 @pytest.mark.freeze_time("2026-09-21 10:30:00+00:00")
@@ -462,3 +464,15 @@ async def test_panel_edits_roof_planes(hass, tallinn, nordpool, open_meteo, hass
     await ws.send_json({"id": 3, "type": "watt_window/save", "solar_planes": [{"kwp": 0}]})
     msg = await ws.receive_json()
     assert not msg["success"] and msg["error"]["code"] == "bad_planes"
+
+
+@pytest.mark.freeze_time("2026-09-21 12:00:00+00:00")
+@pytest.mark.parametrize("price_fn", [default_price])
+async def test_zero_export_makes_spare_solar_free(hass, tallinn, nordpool, forecast_solar):
+    # With export, the night block (0.083) beat using solar (worth a 0.10 export).
+    # Without export, spare solar would be lost, so using it costs nothing: midday wins.
+    await setup(hass, solar_entry_id=forecast_solar.entry_id, can_export=False)
+    st = hass.states.get("sensor.watt_window_cheapest_1_h_window")
+    assert st.state == "2026-09-22T10:00:00+00:00"
+    assert st.attributes["average_price"] == 0.0
+    assert st.attributes["solar_share"] == 1.0

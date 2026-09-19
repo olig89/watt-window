@@ -13,6 +13,7 @@ CONF_TARIFF = "tariff"
 CONF_SOLAR_ENTRY = "solar_entry_id"  # 0.1-0.3: a single Forecast.Solar entry
 CONF_SOLAR_ENTRIES = "solar_entry_ids"  # several solar forecast setups; their forecasts are added up
 CONF_SOLAR_SOURCE = "solar_source"  # none | open_meteo | forecast_solar
+CONF_CAN_EXPORT = "can_export"  # False: spare solar is throttled away, so using it is free
 CONF_PLANES = "solar_planes"  # [{name, kwp, tilt, direction}] for open_meteo
 CONF_DAY_START = "day_window_start"  # local hour the "daytime" windows start
 CONF_DAY_END = "day_window_end"

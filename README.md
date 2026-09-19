@@ -15,7 +15,7 @@ Watt Window never switches anything itself. It only provides sensors, so your au
   - **Estimate it for me** (free, no account): Watt Window turns [Open-Meteo](https://open-meteo.com/)'s sunlight forecast into expected output. It needs one number to start, your total panel size in kWp, and assumes a south-facing roof at 35°. On the Settings tab you can add each roof plane with its own size, direction and tilt whenever you know them. Weather data by Open-Meteo.com, CC BY 4.0.
   - **Forecast.Solar**, if you already use Home Assistant's [Forecast.Solar](https://www.home-assistant.io/integrations/forecast_solar/) integration.
 
-  Either way, your panels first cover your typical house load. Any spare output then covers the load you want to run, and that share costs only the export price you'd otherwise have earned. So a sunny midday can beat a cheap night, and it only does when it really is cheaper.
+  Either way, your panels first cover your typical house load. Any spare output then covers the load you want to run. What that share costs depends on one setting, **My system sends spare power to the grid**: if it does, using spare solar costs the export price you'd otherwise have earned; if your inverter holds the panels back instead ("zero export"), spare solar would simply be lost, so using it is free. So a sunny midday beats a cheap night only when it really is cheaper.
 
 When prices are flat for a while (common at night, or on a day/night tariff at weekends), several Watt Windows can start at the same time: ties go to the earliest start. The sidebar page then says how late you could start for the same price, and the `latest_same_price_start` attribute lets an automation use that.
 

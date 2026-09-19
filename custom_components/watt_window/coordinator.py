@@ -17,6 +17,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_BASE_LOAD_W,
+    CONF_CAN_EXPORT,
     CONF_COUNTRY,
     CONF_DAY_END,
     CONF_DAY_START,
@@ -137,7 +138,7 @@ class WattWindowCoordinator(DataUpdateCoordinator[WattWindowData]):
                 warnings.append("Solar forecast unavailable: Watt Windows use grid prices only.")
 
         tariff = {**s[CONF_TARIFF], "timezone": tz}
-        quarters = price_quarters(spots, tariff, holidays, solar_w)
+        quarters = price_quarters(spots, tariff, holidays, solar_w, bool(s.get(CONF_CAN_EXPORT, True)))
         load_w = float(s.get(CONF_LOAD_W, DEFAULT_LOAD_W))
         base_w = float(s.get(CONF_BASE_LOAD_W, DEFAULT_BASE_LOAD_W))
         current = quarter_floor(now)
