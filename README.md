@@ -1,6 +1,6 @@
 # Watt Window
 
-Finds the cheapest hours to run things in Home Assistant, using Nord Pool spot prices, your own tariff, and an optional solar forecast.
+Finds the cheapest hours to run things in Home Assistant, using Nord Pool spot prices, your own tariff, and an optional solar forecast. Set-up asks for as little as possible; you add detail later, when you have it.
 
 Each block of cheap hours it finds is a **Watt Window**. You choose the Watt Window lengths (1, 2, 4 and 6 hours by default, plus any lengths you add). For each one, Watt Window tells you when the cheapest block starts and gives you a sensor that is **on** while that block is running. Point your automations at those sensors to start the dishwasher, washing machine, heat pump boost, car or battery charging, and so on.
 
@@ -11,9 +11,13 @@ Watt Window never switches anything itself. It only provides sensors, so your au
 - **Spot prices** from the built-in [Nord Pool](https://www.home-assistant.io/integrations/nordpool/) integration, at 15-minute resolution. Tomorrow's prices are fetched once they are published, usually early afternoon.
 - **Your tariff:** a network rate that can be flat, day/night, or day/night with winter peaks (Estonia's Võrk 5), plus supplier margin, other per-kWh charges and VAT. Presets for Elektrilevi Võrk 1, 2, 4 and 5 are included. Anyone else can enter their own rates.
 - **Public holidays** for day/night tariffs that charge the night rate on holidays, from your country code.
-- **Solar (optional)** from the built-in [Forecast.Solar](https://www.home-assistant.io/integrations/forecast_solar/) integration. If you tick more than one Forecast.Solar setup, their forecasts are added up. (Forecast.Solar needs a paid API key for more than one roof plane in a setup.) Your panels first cover your typical house load. Any spare output then covers the load you want to run, and that share costs only the export price you'd otherwise have earned. So a sunny midday can beat a cheap night, and it only does when it really is cheaper.
+- **Solar (optional)**, two ways:
+  - **Estimate it for me** (free, no account): Watt Window turns [Open-Meteo](https://open-meteo.com/)'s sunlight forecast into expected output. It needs one number to start, your total panel size in kWp, and assumes a south-facing roof at 35°. On the Settings tab you can add each roof plane with its own size, direction and tilt whenever you know them. Weather data by Open-Meteo.com, CC BY 4.0.
+  - **Forecast.Solar**, if you already use Home Assistant's [Forecast.Solar](https://www.home-assistant.io/integrations/forecast_solar/) integration.
 
-When prices are flat for a while (common at night, or on a day/night tariff at weekends), several windows can start at the same time: ties go to the earliest start. The sidebar page then says how late you could start for the same price, and the `latest_same_price_start` attribute lets an automation use that.
+  Either way, your panels first cover your typical house load. Any spare output then covers the load you want to run, and that share costs only the export price you'd otherwise have earned. So a sunny midday can beat a cheap night, and it only does when it really is cheaper.
+
+When prices are flat for a while (common at night, or on a day/night tariff at weekends), several Watt Windows can start at the same time: ties go to the earliest start. The sidebar page then says how late you could start for the same price, and the `latest_same_price_start` attribute lets an automation use that.
 
 Each length also gets a cheapest **daytime** and cheapest **overnight** window, for jobs that must happen in one or the other. The day runs 08:00-20:00 by default (change it on the Settings tab); a window is searched in the current day or night if enough of it is left, otherwise in the next one.
 
@@ -28,7 +32,7 @@ Once a window has started, it stays put. A price update mid-window will not move
 1. In HACS, open the menu (⋮) → **Custom repositories**. Add `https://github.com/olig89/watt-window` with type **Integration**.
 2. Search HACS for **Watt Window** (the main list only shows what you've already downloaded), open it and download it. Restart Home Assistant.
 3. Make sure **Nord Pool** is set up (Settings → Devices & services → Add integration → Nord Pool). Set up **Forecast.Solar** too if you have panels.
-4. Add the **Watt Window** integration: price area and tariff preset, tariff details, then two questions you can skip: solar panels and home battery.
+4. Add the **Watt Window** integration: price area and tariff preset, tariff details, then two questions you can skip: solar panels ("estimate it for me" needs only your panel size) and home battery.
 
 **Nord Pool is required** (it's where the prices come from). Solar and battery are optional and can be turned on or off later under **Configure**.
 

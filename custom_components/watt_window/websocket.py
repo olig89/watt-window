@@ -15,7 +15,9 @@ from .const import (
     CONF_DAY_START,
     CONF_HAS_BATTERY,
     CONF_LOAD_W,
+    CONF_PLANES,
     CONF_SOLAR_ENTRIES,
+    CONF_SOLAR_SOURCE,
     CONF_TARIFF,
     CONF_WINDOWS,
     DEFAULT_BASE_LOAD_W,
@@ -29,7 +31,8 @@ from .const import (
     solar_entry_label,
     window_label,
 )
-from .validation import SettingsError, clean_day_hours, clean_tariff, clean_windows
+from .sources.solar import solar_source_kind
+from .validation import SOLAR_SOURCES, SettingsError, clean_day_hours, clean_planes, clean_tariff, clean_windows
 
 
 @callback
@@ -64,7 +67,6 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
         for e in hass.config_entries.async_entries(FORECAST_SOLAR_DOMAIN)
     ]
     chosen = solar_entry_ids(s)
-    solar_title = ", ".join(o["title"] for o in solar_options if o["entry_id"] in chosen) or None
 
     def brief(w, kind, m):
         if w is None:
@@ -86,7 +88,12 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
             "prices_until": _iso(data.prices_until),
             "next_prices_at": _iso(data.next_prices_at),
             "price_source": data.price_source,
-            "solar": {"configured": data.solar_configured, "ok": data.solar_ok, "title": solar_title},
+            "solar": {
+                "configured": data.solar_configured,
+                "ok": data.solar_ok,
+                "title": data.solar_title,
+                "credit": data.solar_credit,
+            },
             "warnings": data.warnings,
             "quarters": [
                 {
@@ -127,6 +134,8 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
                 "has_battery": bool(s.get(CONF_HAS_BATTERY, False)),
                 "day_start": int(s.get(CONF_DAY_START, DEFAULT_DAY_START)),
                 "day_end": int(s.get(CONF_DAY_END, DEFAULT_DAY_END)),
+                "solar_source": solar_source_kind(s),
+                "solar_planes": s.get(CONF_PLANES) or [],
                 "solar_entry_ids": chosen,
                 "solar_options": solar_options,
             },
@@ -145,6 +154,8 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
         vol.Optional("day_start"): vol.Coerce(int),
         vol.Optional("day_end"): vol.Coerce(int),
         vol.Optional("solar_entry_ids"): [str],
+        vol.Optional("solar_source"): vol.In(SOLAR_SOURCES),
+        vol.Optional("solar_planes"): [dict],
     }
 )
 @websocket_api.require_admin
@@ -180,6 +191,15 @@ async def ws_save(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
             if any(i not in known for i in ids):
                 raise SettingsError("bad_solar")
             options[CONF_SOLAR_ENTRIES] = ids
+        if "solar_planes" in msg:
+            options[CONF_PLANES] = clean_planes(msg["solar_planes"])
+        if "solar_source" in msg:
+            kind = msg["solar_source"]
+            if kind == "open_meteo" and not options.get(CONF_PLANES, settings_of(entry).get(CONF_PLANES)):
+                raise SettingsError("bad_planes")
+            if kind == "forecast_solar" and not options.get(CONF_SOLAR_ENTRIES, solar_entry_ids(settings_of(entry))):
+                raise SettingsError("bad_solar")
+            options[CONF_SOLAR_SOURCE] = kind
     except SettingsError as err:
         connection.send_error(msg["id"], err.key, str(err))
         return

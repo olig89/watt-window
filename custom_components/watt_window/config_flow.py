@@ -35,8 +35,10 @@ from .const import (
     CONF_HAS_BATTERY,
     CONF_LOAD_W,
     CONF_NORDPOOL_ENTRY,
+    CONF_PLANES,
     CONF_PRESET,
     CONF_SOLAR_ENTRIES,
+    CONF_SOLAR_SOURCE,
     CONF_TARIFF,
     CONF_WINDOWS,
     DEFAULT_BASE_LOAD_W,
@@ -51,6 +53,7 @@ from .const import (
     solar_entry_label,
 )
 from .core.presets import PRESETS, tariff_from_preset
+from .core.solar import DEFAULT_DIRECTION, DEFAULT_TILT
 from .core.tariff import rate_keys
 from .validation import SettingsError, clean_tariff, parse_hours_list
 
@@ -145,27 +148,48 @@ class _SharedSteps:
         return self.async_show_form(step_id="tariff", data_schema=_tariff_schema(t), errors=errors)
 
     async def async_step_solar_menu(self, user_input: dict | None = None) -> ConfigFlowResult:
-        # Only offer "use solar" when there's a Forecast.Solar setup to pick.
+        # Forecast.Solar is only offered to people who already have it set up.
         has_forecast = bool(self.hass.config_entries.async_entries(FORECAST_SOLAR_DOMAIN))
         return self.async_show_menu(
             step_id="solar_menu",
-            menu_options=["solar", "skip_solar"] if has_forecast else ["skip_solar"],
-            description_placeholders={
-                "note": "" if has_forecast else
-                "\n\n**No Forecast.Solar setup found.** [Add Forecast.Solar](/config/integrations/dashboard/add?domain=forecast_solar) "
-                "then turn solar on from Watt Window's Settings tab. Skip for now."
-            },
+            menu_options=["estimate", "solar", "skip_solar"] if has_forecast else ["estimate", "skip_solar"],
         )
+
+    async def async_step_estimate(self, user_input: dict | None = None) -> ConfigFlowResult:
+        """Our own estimate: one rough number now, the details later on the Settings tab."""
+        planes = list(self._store.get(CONF_PLANES) or [])
+        current = sum(float(p["kwp"]) for p in planes) or None
+        if user_input is not None:
+            kwp = float(user_input["kwp"])
+            if planes and current:
+                # Keep what they've described; just rescale to the new total.
+                planes = [{**p, "kwp": round(float(p["kwp"]) * kwp / current, 3)} for p in planes]
+            else:
+                planes = [{"name": "Panels", "kwp": kwp, "tilt": DEFAULT_TILT, "direction": DEFAULT_DIRECTION}]
+            self._store[CONF_SOLAR_SOURCE] = "open_meteo"
+            self._store[CONF_PLANES] = planes
+            self._store[CONF_BASE_LOAD_W] = user_input[CONF_BASE_LOAD_W]
+            return await self.async_step_battery_menu()
+        schema = vol.Schema(
+            {
+                vol.Required("kwp", default=current or 5): NumberSelector(
+                    NumberSelectorConfig(min=0.1, max=1000, step=0.1, unit_of_measurement="kWp", mode=NumberSelectorMode.BOX)
+                ),
+                vol.Required(CONF_BASE_LOAD_W, default=self._store.get(CONF_BASE_LOAD_W, DEFAULT_BASE_LOAD_W)): _watts(),
+            }
+        )
+        return self.async_show_form(step_id="estimate", data_schema=schema)
 
     async def async_step_solar(self, user_input: dict | None = None) -> ConfigFlowResult:
         if user_input is not None:
+            self._store[CONF_SOLAR_SOURCE] = "forecast_solar"
             self._store[CONF_SOLAR_ENTRIES] = list(user_input[CONF_SOLAR_ENTRIES])
             self._store[CONF_BASE_LOAD_W] = user_input[CONF_BASE_LOAD_W]
             return await self.async_step_battery_menu()
         return self.async_show_form(step_id="solar", data_schema=_solar_schema(self.hass, self._store))
 
     async def async_step_skip_solar(self, user_input: dict | None = None) -> ConfigFlowResult:
-        self._store[CONF_SOLAR_ENTRIES] = []
+        self._store[CONF_SOLAR_SOURCE] = "none"
         return await self.async_step_battery_menu()
 
     async def async_step_battery_menu(self, user_input: dict | None = None) -> ConfigFlowResult:
@@ -250,6 +274,7 @@ class WattWindowOptionsFlow(_SharedSteps, OptionsFlow):
             for key in (CONF_BASE_LOAD_W, CONF_LOAD_W, CONF_HAS_BATTERY):
                 self._store.setdefault(key, current.get(key))
             self._store[CONF_SOLAR_ENTRIES] = solar_entry_ids(current)
+            self._store[CONF_PLANES] = current.get(CONF_PLANES) or []
             if user_input[CONF_PRESET] != KEEP:
                 self._store[CONF_PRESET] = user_input[CONF_PRESET]
                 self._store[CONF_TARIFF] = tariff_from_preset(user_input[CONF_PRESET])

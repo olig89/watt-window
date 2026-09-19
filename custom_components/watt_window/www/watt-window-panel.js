@@ -21,6 +21,10 @@ const RATE_KEYS = {
   vork5: ["day", "night", "weekday_peak", "weekend_peak"],
 };
 const PLAN_NAMES = { flat: "One rate", day_night: "Day / night", vork5: "Day / night / winter peaks (Võrk 5)" };
+const DIRECTIONS = [
+  [0, "North"], [45, "North-east"], [90, "East"], [135, "South-east"],
+  [180, "South"], [225, "South-west"], [270, "West"], [315, "North-west"],
+];
 const WINDOW_COLOURS = ["#2e7d32", "#1565c0", "#ef6c00", "#6a1b9a", "#00838f", "#ad1457", "#5d4037"];
 
 const esc = (s) =>
@@ -162,6 +166,7 @@ class WattWindowPanel extends HTMLElement {
             <select id="hl">${d.windows.map((w) => `<option value="${w.minutes}" ${w.minutes === this._highlight ? "selected" : ""}>${esc(w.label)}</option>`).join("")}</select></span>
         </div>
         <p class="explain"><b>Why the chart stops where it does:</b> ${esc(d.price_source)} sets tomorrow's prices once a day, at an auction that closes at noon Central European time; they're published about 45 minutes later${d.next_prices_at ? ` (${this._when(d.next_prices_at)} your time)` : ""}. Before that, nobody knows prices beyond midnight CET, so the furthest anyone can see is roughly a day and a half, and some mornings less than a day.</p>
+        ${d.solar.credit ? `<p class="explain credit">Solar estimate: ${esc(d.solar.credit)}.</p>` : ""}
         <p class="explain">Each bar is the price of one quarter-hour: ${esc(d.price_source)} spot plus your network rate, fees and VAT.
         ${d.solar.configured ? "Where your panels are forecast to produce more than your typical house load, the spare output covers the load first, so that part only costs the export price you'd otherwise have earned." : ""}
         A Watt Window is the run of quarter-hours with the lowest average. Once a Watt Window has started it stays put, even if prices change.</p>
@@ -298,6 +303,8 @@ class WattWindowPanel extends HTMLElement {
         day_start: s.day_start,
         day_end: s.day_end,
         solar_entry_ids: [...(s.solar_entry_ids || [])],
+        solar_source: s.solar_source || "none",
+        solar_planes: JSON.parse(JSON.stringify(s.solar_planes || [])),
         tariff: JSON.parse(JSON.stringify(s.tariff)),
       };
     }
@@ -330,10 +337,15 @@ class WattWindowPanel extends HTMLElement {
       </div>
       <div class="card">
         <h3>Solar</h3>
-        ${d.settings.solar_options.length
+        <div class="radios">
+          ${[["none", "No solar"], ["open_meteo", "Estimate it for me (free, Open-Meteo)"], ["forecast_solar", "Forecast.Solar"]]
+            .map(([v, l]) => `<label class="check"><input type="radio" name="solar_source" value="${v}" ${f.solar_source === v ? "checked" : ""}> ${l}</label>`).join("")}
+        </div>
+        ${f.solar_source === "open_meteo" ? this._planesEditor(f) : ""}
+        ${f.solar_source === "forecast_solar" ? (d.settings.solar_options.length
           ? `<p class="s">Tick the Forecast.Solar setup that covers your panels. If you tick more than one, their forecasts are added up.</p>
              ${d.settings.solar_options.map((o) => `<label class="check"><input type="checkbox" data-solar="${esc(o.entry_id)}" ${f.solar_entry_ids.includes(o.entry_id) ? "checked" : ""}> ${esc(o.title)}</label>`).join("")}`
-          : `<p class="s">No Forecast.Solar setup yet. <a href="/config/integrations/dashboard/add?domain=forecast_solar">Add Forecast.Solar</a> then come back here and tick it.</p>`}
+          : `<p class="s">No Forecast.Solar setup yet. <a href="/config/integrations/dashboard/add?domain=forecast_solar">Add Forecast.Solar</a>, then come back here and tick it.</p>`) : ""}
         <div class="grid" style="margin-top:12px">
           <label>What your house uses on its own (W)<input type="number" min="0" step="50" data-f="base_load_w" value="${f.base_load_w}"></label>
         </div>
@@ -366,6 +378,27 @@ class WattWindowPanel extends HTMLElement {
       <div class="actions"><button class="btn primary" id="save" ${this._saving ? "disabled" : ""}>${this._saving ? "Saving…" : "Save"}</button></div>`;
   }
 
+  _planesEditor(f) {
+    if (!f.solar_planes.length) f.solar_planes = [{ name: "Panels", kwp: 5, tilt: 35, direction: 180 }];
+    const rows = f.solar_planes.map((p, i) => {
+      const known = DIRECTIONS.some(([deg]) => deg === Number(p.direction));
+      const dirOptions = DIRECTIONS.map(([deg, name]) => `<option value="${deg}" ${Number(p.direction) === deg ? "selected" : ""}>${name}</option>`).join("")
+        + (known ? "" : `<option value="${p.direction}" selected>${p.direction}°</option>`);
+      return `<div class="plane">
+        <label>Name<input type="text" data-plane="${i}" data-key="name" value="${esc(p.name)}"></label>
+        <label>Size (kWp)<input type="number" min="0.1" step="0.1" data-plane="${i}" data-key="kwp" value="${p.kwp}"></label>
+        <label>Faces<select data-plane="${i}" data-key="direction">${dirOptions}</select></label>
+        <label>Tilt (°)<input type="number" min="0" max="90" step="1" data-plane="${i}" data-key="tilt" value="${p.tilt}"></label>
+        ${f.solar_planes.length > 1 ? `<button class="btn small" data-rmplane="${i}" aria-label="Remove ${esc(p.name)}">Remove</button>` : ""}
+      </div>`;
+    }).join("");
+    return `<p class="s">Only the size matters to start: south-facing at 35° is assumed until you say otherwise.
+      If your panels are on more than one roof slope, add each one: its own direction and tilt make the forecast more accurate. Flat roof: tilt 0.</p>
+      ${rows}
+      <button class="btn small" id="addplane">Add a roof plane</button>
+      <p class="s credit">Weather data by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a> (CC BY 4.0).</p>`;
+  }
+
   _bindSettings() {
     const $ = (s) => this.shadowRoot.querySelectorAll(s);
     const f = this._draft;
@@ -392,6 +425,23 @@ class WattWindowPanel extends HTMLElement {
       else f.tariff[k] = Number(i.value);
     }));
     this.shadowRoot.getElementById("battery").addEventListener("change", (e) => (f.has_battery = e.target.checked));
+    $('input[name="solar_source"]').forEach((r) => r.addEventListener("change", () => {
+      f.solar_source = r.value;
+      this._render();
+    }));
+    $("[data-plane]").forEach((i) => i.addEventListener("change", () => {
+      const p = f.solar_planes[Number(i.dataset.plane)];
+      p[i.dataset.key] = i.dataset.key === "name" ? i.value : Number(i.value);
+    }));
+    $("[data-rmplane]").forEach((b) => b.addEventListener("click", () => {
+      f.solar_planes.splice(Number(b.dataset.rmplane), 1);
+      this._render();
+    }));
+    const addPlane = this.shadowRoot.getElementById("addplane");
+    if (addPlane) addPlane.addEventListener("click", () => {
+      f.solar_planes.push({ name: `Plane ${f.solar_planes.length + 1}`, kwp: 2, tilt: 35, direction: 180 });
+      this._render();
+    });
     $("[data-solar]").forEach((i) => i.addEventListener("change", () => {
       const id = i.dataset.solar;
       f.solar_entry_ids = i.checked ? [...new Set([...f.solar_entry_ids, id])] : f.solar_entry_ids.filter((x) => x !== id);
@@ -413,6 +463,8 @@ class WattWindowPanel extends HTMLElement {
         day_start: this._draft.day_start,
         day_end: this._draft.day_end,
         solar_entry_ids: this._draft.solar_entry_ids,
+        solar_source: this._draft.solar_source,
+        ...(this._draft.solar_source === "open_meteo" ? { solar_planes: this._draft.solar_planes } : {}),
         tariff: this._draft.tariff,
       });
       this._notice = { ok: true, text: "Saved. Watt Window has recalculated with your new settings." };
@@ -458,6 +510,11 @@ const STYLES = `
   .when { font-size:18px; font-weight:500; margin:4px 0; }
   .flex { color: var(--primary-text-color); margin-bottom:4px; }
   .muted { color: var(--secondary-text-color); font-style: italic; }
+  .plane { display:grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap:8px 12px; align-items:end; padding:10px 0; border-top:1px solid var(--divider-color); }
+  .plane input[type=text] { font:inherit; font-size:14px; padding:8px; border-radius:6px; border:1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); }
+  .btn.small { padding:6px 12px; font-size:13px; }
+  .radios { display:flex; flex-wrap:wrap; gap:6px 18px; margin:4px 0 8px; }
+  .credit { font-size:12px; }
   .split { border-top:1px solid var(--divider-color); margin-top:8px; padding-top:6px; }
   .chip { display:inline-flex; align-items:center; gap:4px; background: var(--c, var(--primary-color)); color:#fff; border-radius:10px; padding:1px 8px; font-size:12px; }
   .chip.big { background: var(--secondary-background-color); color: var(--primary-text-color); font-size:14px; padding:4px 4px 4px 10px; }

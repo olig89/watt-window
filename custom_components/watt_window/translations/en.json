@@ -38,8 +38,9 @@
       },
       "solar_menu": {
         "title": "Solar panels",
-        "description": "Do you want Watt Windows to take a solar forecast into account? You can change this later under Configure.{note}",
+        "description": "Should Watt Windows take your solar panels into account? You can change this, and add detail, later on Watt Window's Settings tab.",
         "menu_options": {
+          "estimate": "Yes, estimate it for me (free, from Open-Meteo)",
           "solar": "Yes, use my Forecast.Solar setup",
           "skip_solar": "Skip, no solar"
         }
@@ -62,6 +63,18 @@
           "battery": "Yes, I have a home battery",
           "skip_battery": "Skip, no battery"
         }
+      },
+      "estimate": {
+        "title": "Your panels",
+        "description": "One rough number is enough to start. Watt Window assumes a south-facing roof at 35° until you tell it more: add each roof plane's tilt and direction later on the Settings tab if you know them.",
+        "data": {
+          "kwp": "Total panel size",
+          "base_load_w": "What your house uses on its own"
+        },
+        "data_description": {
+          "kwp": "The kWp on your installation paperwork or inverter app. A guess is fine: e.g. 12 panels of 400 W = 4.8 kWp.",
+          "base_load_w": "Your panels power the house first; only what's left over makes a Watt Window cheaper. If you don't know, leave 500 W."
+        }
       }
     },
     "abort": {
@@ -74,7 +87,8 @@
       "bad_hours": "The day rate must start before it ends, between 0 and 24.",
       "bad_vat": "VAT must be between 0 and 99 %.",
       "bad_day_hours": "The day must start before it ends, between 0 and 24.",
-      "bad_solar": "That Forecast.Solar setup no longer exists."
+      "bad_solar": "That Forecast.Solar setup no longer exists.",
+      "bad_planes": "Each roof plane needs a size above 0 kWp and a tilt between 0 and 90°."
     }
   },
   "options": {
@@ -117,8 +131,9 @@
       },
       "solar_menu": {
         "title": "Solar panels",
-        "description": "Do you want Watt Windows to take a solar forecast into account? You can change this later under Configure.{note}",
+        "description": "Should Watt Windows take your solar panels into account? You can change this, and add detail, later on Watt Window's Settings tab.",
         "menu_options": {
+          "estimate": "Yes, estimate it for me (free, from Open-Meteo)",
           "solar": "Yes, use my Forecast.Solar setup",
           "skip_solar": "Skip, no solar"
         }
@@ -141,6 +156,18 @@
           "battery": "Yes, I have a home battery",
           "skip_battery": "Skip, no battery"
         }
+      },
+      "estimate": {
+        "title": "Your panels",
+        "description": "One rough number is enough to start. Watt Window assumes a south-facing roof at 35° until you tell it more: add each roof plane's tilt and direction later on the Settings tab if you know them.",
+        "data": {
+          "kwp": "Total panel size",
+          "base_load_w": "What your house uses on its own"
+        },
+        "data_description": {
+          "kwp": "The kWp on your installation paperwork or inverter app. A guess is fine: e.g. 12 panels of 400 W = 4.8 kWp.",
+          "base_load_w": "Your panels power the house first; only what's left over makes a Watt Window cheaper. If you don't know, leave 500 W."
+        }
       }
     },
     "error": {
@@ -151,7 +178,8 @@
       "no_windows": "Add at least one Watt Window length.",
       "bad_window": "Watt Window lengths must be between 0.25 and 24 hours, in quarter-hour steps.",
       "bad_day_hours": "The day must start before it ends, between 0 and 24.",
-      "bad_solar": "That Forecast.Solar setup no longer exists."
+      "bad_solar": "That Forecast.Solar setup no longer exists.",
+      "bad_planes": "Each roof plane needs a size above 0 kWp and a tilt between 0 and 90°."
     }
   },
   "entity": {

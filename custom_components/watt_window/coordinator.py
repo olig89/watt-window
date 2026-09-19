@@ -12,7 +12,6 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -30,14 +29,12 @@ from .const import (
     DEFAULT_LOAD_W,
     DEFAULT_WINDOWS,
     DOMAIN,
-    FORECAST_SOLAR_DOMAIN,
     settings_of,
-    solar_entry_ids,
 )
 from .core.periods import KINDS, period_for
-from .core.solar import quarter_watts
 from .core.windows import Quarter, Window, cheapest_window, price_quarters
 from .sources import PriceSourceError, price_source
+from .sources.solar import solar_source
 
 _LOGGER = logging.getLogger(__name__)
 QUARTER = timedelta(minutes=15)
@@ -62,6 +59,8 @@ class WattWindowData:
     # Honest horizon: prices beyond ``prices_until`` don't exist yet anywhere.
     next_prices_at: datetime | None = None
     price_source: str = ""
+    solar_title: str | None = None
+    solar_credit: str | None = None
     periods: dict[str, dict[int, tuple[datetime, datetime] | None]] = field(default_factory=dict)
 
     def window(self, kind: str, minutes: int) -> Window | None:
@@ -85,6 +84,7 @@ class WattWindowCoordinator(DataUpdateCoordinator[WattWindowData]):
         super().__init__(hass, _LOGGER, name=DOMAIN, config_entry=entry, update_interval=None)
         # Owned here so it survives refreshes; the price source decides what goes in it.
         self._price_cache: dict = {}
+        self._solar_cache: dict = {}
         self._committed: dict[tuple[str, int], Window] = {}
         self._holidays: dict[tuple[str, int], set[date]] = {}
 
@@ -113,33 +113,6 @@ class WattWindowCoordinator(DataUpdateCoordinator[WattWindowData]):
             out |= self._holidays.get((country, y), set())
         return out
 
-    async def _solar(self, entry_id: str) -> dict[datetime, float] | None:
-        """Quarter-hour watts from Forecast.Solar, or None if unavailable."""
-        if self.hass.config_entries.async_get_entry(entry_id) is None:
-            return None
-        if self.hass.services.has_service(FORECAST_SOLAR_DOMAIN, "get_forecast"):
-            try:
-                resp = await self.hass.services.async_call(
-                    FORECAST_SOLAR_DOMAIN,
-                    "get_forecast",
-                    {"config_entry": entry_id, "resolution": "hourly"},
-                    blocking=True,
-                    return_response=True,
-                )
-                return quarter_watts((resp or {}).get("wh_period") or {})
-            except HomeAssistantError as err:
-                _LOGGER.debug("Forecast.Solar get_forecast failed: %s", err)
-                return None
-        # Older HA: the energy-dashboard hook (hourly Wh).
-        try:
-            from homeassistant.components.forecast_solar.energy import async_get_solar_forecast
-
-            data = await async_get_solar_forecast(self.hass, entry_id)
-        except Exception as err:  # noqa: BLE001 - optional source, never fatal
-            _LOGGER.debug("Forecast.Solar energy hook failed: %s", err)
-            return None
-        return quarter_watts((data or {}).get("wh_hours") or {})
-
     async def _async_update_data(self) -> WattWindowData:
         s = self.settings
         tz = self.hass.config.time_zone
@@ -156,21 +129,12 @@ class WattWindowCoordinator(DataUpdateCoordinator[WattWindowData]):
         holidays = await self._holiday_dates(s.get(CONF_COUNTRY) or "", years) if s.get(CONF_COUNTRY) else set()
 
         warnings: list[str] = []
-        solar_ids = solar_entry_ids(s)
-        solar_w: dict[datetime, float] | None = None
-        failed = 0
-        for entry_id in solar_ids:
-            part = await self._solar(entry_id)
-            if part is None:
-                failed += 1
-                continue
-            solar_w = solar_w or {}
-            for t, w in part.items():
-                solar_w[t] = solar_w.get(t, 0.0) + w
-        if solar_ids and solar_w is None:
-            warnings.append("Solar forecast unavailable: windows use grid prices only.")
-        elif failed:
-            warnings.append(f"{failed} of {len(solar_ids)} solar forecasts unavailable: the total is too low.")
+        solar = solar_source(self.hass, s, self._solar_cache)
+        solar_w = await solar.async_watts(now) if solar else None
+        if solar:
+            warnings += solar.warnings
+            if solar_w is None:
+                warnings.append("Solar forecast unavailable: Watt Windows use grid prices only.")
 
         tariff = {**s[CONF_TARIFF], "timezone": tz}
         quarters = price_quarters(spots, tariff, holidays, solar_w)
@@ -210,13 +174,15 @@ class WattWindowCoordinator(DataUpdateCoordinator[WattWindowData]):
             now=now,
             currency=currency,
             prices_until=quarters[-1].end if quarters else None,
-            solar_configured=bool(solar_ids),
+            solar_configured=solar is not None,
             solar_ok=solar_w is not None,
             warnings=warnings,
             period_windows=period_windows,
             periods=periods,
             next_prices_at=fetched.next_prices_at,
             price_source=source.name,
+            solar_title=solar.title if solar else None,
+            solar_credit=solar.credit if solar else None,
         )
 
     def settled(self, kind: str, minutes: int) -> bool:

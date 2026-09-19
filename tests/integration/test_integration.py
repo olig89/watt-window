@@ -62,7 +62,7 @@ async def test_config_flow_creates_entry(hass, tallinn, nordpool):
          "margin": 0.006, "other_per_kwh": 0.02181, "export_fee": 0},
     )
     # No Forecast.Solar set up, so skipping is the only choice offered.
-    assert result["type"] is FlowResultType.MENU and result["menu_options"] == ["skip_solar"]
+    assert result["type"] is FlowResultType.MENU and result["menu_options"] == ["estimate", "skip_solar"]
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "skip_solar"})
     assert result["step_id"] == "battery_menu"
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "skip_battery"})
@@ -72,7 +72,7 @@ async def test_config_flow_creates_entry(hass, tallinn, nordpool):
     assert data["tariff"]["vat"] == pytest.approx(0.24)
     assert data["windows"] == [60, 120, 240, 360]
     assert data["has_battery"] is False
-    assert data["solar_entry_ids"] == []
+    assert data["solar_source"] == "none"
     assert data["load_w"] == 1000 and data["base_load_w"] == 500  # defaults, never asked
 
 
@@ -251,7 +251,7 @@ async def test_config_flow_with_solar_and_battery(hass, tallinn, nordpool, forec
         result["flow_id"],
         {"rate_flat": 0.0772, "vat_percent": 24, "margin": 0.006, "other_per_kwh": 0.02181, "export_fee": 0},
     )
-    assert result["menu_options"] == ["solar", "skip_solar"]
+    assert result["menu_options"] == ["estimate", "solar", "skip_solar"]
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "solar"})
     assert result["step_id"] == "solar"
     result = await hass.config_entries.flow.async_configure(
@@ -279,7 +279,7 @@ async def test_options_flow_can_turn_solar_off(hass, tallinn, nordpool, forecast
     result = await hass.config_entries.options.async_configure(result["flow_id"], {"hours": "1, 2"})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
-    assert entry.options["solar_entry_ids"] == []
+    assert entry.options["solar_source"] == "none"
     assert hass.states.get("sensor.watt_window_solar_forecast_now") is None
 
 
@@ -383,3 +383,82 @@ async def test_overnight_window_settles_once_prices_cover_the_night(hass, tallin
     await setup(hass)
     night = hass.states.get("sensor.watt_window_cheapest_overnight_2_h_window")
     assert night.attributes["settled"] is True
+
+
+def open_meteo_reply(url_params) -> dict:
+    """Fake Open-Meteo: 500 W/m2 on the plane 10:00-12:00 UTC each day, night otherwise."""
+    from datetime import datetime, timedelta, timezone
+
+    start = datetime(2026, 9, 20, tzinfo=timezone.utc)
+    times, values = [], []
+    for k in range(4 * 24 * 4):
+        end = start + timedelta(minutes=15 * (k + 1))  # stamped at the END of the quarter
+        times.append(int(end.timestamp()))
+        values.append(500.0 if 10 <= (end - timedelta(minutes=15)).hour < 12 else 0.0)
+    return {"minutely_15": {"time": times, "global_tilted_irradiance": values}}
+
+
+@pytest.fixture
+def open_meteo(aioclient_mock):
+    aioclient_mock.get("https://api.open-meteo.com/v1/forecast", json=open_meteo_reply(None))
+    return aioclient_mock
+
+
+@pytest.mark.freeze_time(NOW)
+async def test_setup_can_estimate_solar_from_one_number(hass, tallinn, nordpool, open_meteo):
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"area": np_area(hass), "preset": "ee_vork1", "country": "EE"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"rate_flat": 0.0772, "vat_percent": 24, "margin": 0.006, "other_per_kwh": 0.02181, "export_fee": 0},
+    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "estimate"})
+    assert result["step_id"] == "estimate"
+    assert set(result["data_schema"].schema) == {"kwp", "base_load_w"}  # nothing else asked up front
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"kwp": 4.8, "base_load_w": 500})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "skip_battery"})
+    data = result["data"]
+    assert data["solar_source"] == "open_meteo"
+    assert data["solar_planes"] == [{"name": "Panels", "kwp": 4.8, "tilt": 35, "direction": 180}]
+
+
+@pytest.mark.freeze_time("2026-09-21 10:30:00+00:00")
+async def test_open_meteo_estimate_feeds_the_windows(hass, tallinn, nordpool, open_meteo):
+    await setup(hass, solar_source="open_meteo",
+                solar_planes=[{"name": "South", "kwp": 4.0, "tilt": 35, "direction": 180},
+                              {"name": "West", "kwp": 2.0, "tilt": 20, "direction": 270}])
+    # 500 W/m2 x 6 kWp x 0.85 = 2550 W
+    assert float(hass.states.get("sensor.watt_window_solar_forecast_now").state) == pytest.approx(2550)
+    params = [call[1].query for call in open_meteo.mock_calls]
+    assert {p["azimuth"] for p in params} == {"0.0", "90.0"}  # south -> 0, west -> 90
+    assert {p["tilt"] for p in params} == {"35.0", "20.0"}
+
+
+@pytest.mark.freeze_time("2026-09-21 10:30:00+00:00")
+async def test_open_meteo_is_asked_at_most_hourly(hass, tallinn, nordpool, open_meteo, freezer):
+    await setup(hass, solar_source="open_meteo", solar_planes=[{"name": "P", "kwp": 4.0, "tilt": 35, "direction": 180}])
+    first = open_meteo.call_count
+    freezer.tick(timedelta(minutes=15))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert open_meteo.call_count == first
+
+
+@pytest.mark.freeze_time("2026-09-21 12:00:00+00:00")
+async def test_panel_edits_roof_planes(hass, tallinn, nordpool, open_meteo, hass_ws_client):
+    entry = await setup(hass)
+    ws = await hass_ws_client(hass)
+    await ws.send_json({"id": 1, "type": "watt_window/save", "solar_source": "open_meteo",
+                        "solar_planes": [{"name": "East", "kwp": "3", "direction": 90}]})
+    msg = await ws.receive_json()
+    assert msg["success"], msg
+    await hass.async_block_till_done()
+    assert entry.options["solar_planes"] == [{"name": "East", "kwp": 3.0, "tilt": 35.0, "direction": 90.0}]
+    await ws.send_json({"id": 2, "type": "watt_window/data"})
+    solar = (await ws.receive_json())["result"]["solar"]
+    assert solar["configured"] and "Open-Meteo" in solar["credit"]
+
+    await ws.send_json({"id": 3, "type": "watt_window/save", "solar_planes": [{"kwp": 0}]})
+    msg = await ws.receive_json()
+    assert not msg["success"] and msg["error"]["code"] == "bad_planes"

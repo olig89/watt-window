@@ -72,6 +72,29 @@ def clean_day_hours(start, end) -> tuple[int, int]:
     return start, end
 
 
+SOLAR_SOURCES = ("none", "open_meteo", "forecast_solar")
+MAX_PLANES = 10
+
+
+def clean_planes(planes) -> list[dict]:
+    """Roof planes for the Open-Meteo estimate. Only the size is required."""
+    if not isinstance(planes, list) or not 1 <= len(planes) <= MAX_PLANES:
+        raise SettingsError("bad_planes")
+    out = []
+    for i, p in enumerate(planes, start=1):
+        try:
+            kwp = float(p["kwp"])
+            tilt = float(p.get("tilt", 35))
+            direction = float(p.get("direction", 180)) % 360
+        except (KeyError, TypeError, ValueError) as err:
+            raise SettingsError("bad_planes") from err
+        if not 0 < kwp <= 1000 or not 0 <= tilt <= 90:
+            raise SettingsError("bad_planes")
+        name = str(p.get("name") or f"Plane {i}").strip()[:40] or f"Plane {i}"
+        out.append({"name": name, "kwp": kwp, "tilt": tilt, "direction": direction})
+    return out
+
+
 def parse_hours_list(text: str) -> list[int]:
     """'1, 2, 1.5' (hours) -> [60, 90, 120] minutes."""
     try:
