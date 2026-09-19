@@ -150,21 +150,21 @@ class WattWindowPanel extends HTMLElement {
         <div class="meta">${this._horizon(d)} · ${solarLine}</div>
         ${d.warnings.map((w) => `<div class="meta bad">${esc(w)}</div>`).join("")}
       </div>
-      <h2>Cheapest windows</h2>
-      <div class="windows">${windows || `<div class="card">No windows set up. Add some in Settings.</div>`}</div>
+      <h2>Cheapest Watt Windows</h2>
+      <div class="windows">${windows || `<div class="card">No Watt Windows set up. Add some in Settings.</div>`}</div>
       <h2>Every price we know</h2>
       <div class="card">
         ${this._chart(d)}
         <div class="legend">
           <span><i class="sw bar"></i>What a ${esc(d.settings.load_w)} W load costs each quarter-hour${d.solar.configured ? " (after solar)" : ""}</span>
           ${d.solar.configured ? `<span><i class="sw sun"></i>Solar forecast</span>` : ""}
-          <span><i class="sw band" style="background:${WINDOW_COLOURS[Math.max(0, d.windows.findIndex((w) => w.minutes === this._highlight)) % WINDOW_COLOURS.length]}"></i>Highlighted window:
+          <span><i class="sw band" style="background:${WINDOW_COLOURS[Math.max(0, d.windows.findIndex((w) => w.minutes === this._highlight)) % WINDOW_COLOURS.length]}"></i>Highlighted Watt Window:
             <select id="hl">${d.windows.map((w) => `<option value="${w.minutes}" ${w.minutes === this._highlight ? "selected" : ""}>${esc(w.label)}</option>`).join("")}</select></span>
         </div>
         <p class="explain"><b>Why the chart stops where it does:</b> ${esc(d.price_source)} sets tomorrow's prices once a day, at an auction that closes at noon Central European time; they're published about 45 minutes later${d.next_prices_at ? ` (${this._when(d.next_prices_at)} your time)` : ""}. Before that, nobody knows prices beyond midnight CET, so the furthest anyone can see is roughly a day and a half, and some mornings less than a day.</p>
         <p class="explain">Each bar is the price of one quarter-hour: ${esc(d.price_source)} spot plus your network rate, fees and VAT.
         ${d.solar.configured ? "Where your panels are forecast to produce more than your typical house load, the spare output covers the load first, so that part only costs the export price you'd otherwise have earned." : ""}
-        A window is the run of quarter-hours with the lowest average. Once a window has started it stays put, even if prices change.</p>
+        A Watt Window is the run of quarter-hours with the lowest average. Once a Watt Window has started it stays put, even if prices change.</p>
       </div>`;
   }
 
@@ -183,7 +183,7 @@ class WattWindowPanel extends HTMLElement {
     const colour = WINDOW_COLOURS[i % WINDOW_COLOURS.length];
     if (!w.start) {
       return `<div class="card win" style="--c:${colour}"><div class="wl">${esc(w.label)}</div>
-        <div class="s">Not enough prices published yet for a window this long.${this._data.next_prices_at ? ` More arrive ${this._when(this._data.next_prices_at)}.` : ""}</div></div>`;
+        <div class="s">Not enough prices published yet for a Watt Window this long.${this._data.next_prices_at ? ` More arrive ${this._when(this._data.next_prices_at)}.` : ""}</div></div>`;
     }
     const when = w.active
       ? `<span class="chip">Now</span> until ${this._time(w.end)}`
@@ -312,8 +312,8 @@ class WattWindowPanel extends HTMLElement {
     return `
       ${this._notice ? `<div class="card ${this._notice.ok ? "ok" : "warn"}">${esc(this._notice.text)}</div>` : ""}
       <div class="card">
-        <h3>Window lengths</h3>
-        <p class="s">Each length gets a "Cheapest … window" sensor (its start time) and an "In cheapest … window" sensor (on while it's running).</p>
+        <h3>Watt Window lengths</h3>
+        <p class="s">Each length gets its own Watt Window: a "Cheapest … window" sensor (its start time) and an "In cheapest … window" sensor (on while it's running).</p>
         <div class="chips">${f.windows.map((m) => `<span class="chip big">${esc(label(m))}<button data-rm="${m}" aria-label="Remove ${esc(label(m))}">×</button></span>`).join("")}</div>
         <div class="row">
           <label>Add a length (hours)<input type="number" step="0.25" min="0.25" max="24" id="addw" placeholder="e.g. 3 or 1.5"></label>
@@ -322,7 +322,7 @@ class WattWindowPanel extends HTMLElement {
       </div>
       <div class="card">
         <h3>Day and night</h3>
-        <p class="s">Each length also gets a cheapest <b>daytime</b> and cheapest <b>overnight</b> window, for things that must happen in one or the other. This is your day, not your tariff's.</p>
+        <p class="s">Each length also gets a cheapest <b>daytime</b> and cheapest <b>overnight</b> Watt Window, for things that must happen in one or the other. This is your day, not your tariff's.</p>
         <div class="grid">
           <label>Day starts at (hour)<input type="number" min="0" max="23" step="1" data-f="day_start" value="${f.day_start}"></label>
           <label>Day ends at (hour)<input type="number" min="1" max="24" step="1" data-f="day_end" value="${f.day_end}"></label>
@@ -337,19 +337,19 @@ class WattWindowPanel extends HTMLElement {
         <div class="grid" style="margin-top:12px">
           <label>What your house uses on its own (W)<input type="number" min="0" step="50" data-f="base_load_w" value="${f.base_load_w}"></label>
         </div>
-        <p class="s">Your panels power the house first; only what's left over makes a window cheaper. If unsure, leave 500 W.</p>
+        <p class="s">Your panels power the house first; only what's left over makes a Watt Window cheaper. If unsure, leave 500 W.</p>
       </div>
       <div class="card">
         <h3>Home battery</h3>
         <label class="check"><input type="checkbox" id="battery" ${f.has_battery ? "checked" : ""}> I have a home battery</label>
-        <p class="s">Saved, but it doesn't change anything yet. Battery-aware windows (storing spare solar for later instead of using it straight away) come in a later version.</p>
+        <p class="s">Saved, but it doesn't change anything yet. Battery-aware Watt Windows (storing spare solar for later instead of using it straight away) come in a later version.</p>
       </div>
       <div class="card">
         <h3>Cost estimates</h3>
         <div class="grid">
           <label>Appliance power (W)<input type="number" min="0" step="50" data-f="load_w" value="${f.load_w}"></label>
         </div>
-        <p class="s">Only used for the "≈ € to run" figures and for how much of a window solar can cover.</p>
+        <p class="s">Only used for the "≈ € to run" figures and for how much of a Watt Window solar can cover.</p>
       </div>
       <div class="card">
         <h3>Tariff: ${esc(PLAN_NAMES[t.network_plan] || t.network_plan)}</h3>
@@ -377,7 +377,7 @@ class WattWindowPanel extends HTMLElement {
       const v = Number(this.shadowRoot.getElementById("addw").value);
       const m = Math.round(v * 60);
       if (!v || m < 15 || m > 1440 || m % 15) {
-        this._notice = { ok: false, text: "Window lengths are 0.25–24 hours, in quarter-hour steps." };
+        this._notice = { ok: false, text: "Watt Window lengths are 0.25–24 hours, in quarter-hour steps." };
       } else if (!f.windows.includes(m)) {
         f.windows = [...f.windows, m].sort((a, b) => a - b);
         this._notice = null;

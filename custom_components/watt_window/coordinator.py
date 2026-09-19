@@ -17,13 +17,11 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    CONF_AREA,
     CONF_BASE_LOAD_W,
     CONF_COUNTRY,
     CONF_DAY_END,
     CONF_DAY_START,
     CONF_LOAD_W,
-    CONF_NORDPOOL_ENTRY,
     CONF_TARIFF,
     CONF_WINDOWS,
     DEFAULT_BASE_LOAD_W,
@@ -33,14 +31,13 @@ from .const import (
     DEFAULT_WINDOWS,
     DOMAIN,
     FORECAST_SOLAR_DOMAIN,
-    NORDPOOL_DOMAIN,
     settings_of,
     solar_entry_ids,
 )
-from .core import nordpool
 from .core.periods import KINDS, period_for
 from .core.solar import quarter_watts
 from .core.windows import Quarter, Window, cheapest_window, price_quarters
+from .sources import PriceSourceError, price_source
 
 _LOGGER = logging.getLogger(__name__)
 QUARTER = timedelta(minutes=15)
@@ -64,6 +61,7 @@ class WattWindowData:
     period_windows: dict[str, dict[int, Window | None]] = field(default_factory=dict)
     # Honest horizon: prices beyond ``prices_until`` don't exist yet anywhere.
     next_prices_at: datetime | None = None
+    price_source: str = ""
     periods: dict[str, dict[int, tuple[datetime, datetime] | None]] = field(default_factory=dict)
 
     def window(self, kind: str, minutes: int) -> Window | None:
@@ -85,42 +83,14 @@ class WattWindowCoordinator(DataUpdateCoordinator[WattWindowData]):
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, config_entry=entry, update_interval=None)
-        # Prices for a market date never change once published: cache them.
-        self._price_cache: dict[date, list[dict]] = {}
+        # Owned here so it survives refreshes; the price source decides what goes in it.
+        self._price_cache: dict = {}
         self._committed: dict[tuple[str, int], Window] = {}
         self._holidays: dict[tuple[str, int], set[date]] = {}
 
     @property
     def settings(self) -> dict:
         return settings_of(self.config_entry)
-
-    def _nordpool_entry(self) -> ConfigEntry | None:
-        """The chosen Nord Pool setup (no entities involved: we call its price service)."""
-        entries = self.hass.config_entries.async_loaded_entries(NORDPOOL_DOMAIN)
-        chosen = self.settings.get(CONF_NORDPOOL_ENTRY)
-        for e in entries:
-            if e.entry_id == chosen:
-                return e
-        return entries[0] if entries else None
-
-    async def _fetch_market_date(self, entry: ConfigEntry, area: str, d: date) -> list[dict]:
-        if self._price_cache.get(d):
-            return self._price_cache[d]
-        try:
-            resp = await self.hass.services.async_call(
-                NORDPOOL_DOMAIN,
-                "get_prices_for_date",
-                {"config_entry": entry.entry_id, "date": d.isoformat(), "areas": [area]},
-                blocking=True,
-                return_response=True,
-            )
-        except HomeAssistantError as err:
-            _LOGGER.debug("Nord Pool had no prices for %s yet: %s", d, err)
-            return []
-        rows = list((resp or {}).get(area) or [])
-        if rows:
-            self._price_cache[d] = rows
-        return rows
 
     async def _holiday_dates(self, country: str, years: set[int]) -> set[date]:
         out: set[date] = set()
@@ -172,37 +142,16 @@ class WattWindowCoordinator(DataUpdateCoordinator[WattWindowData]):
 
     async def _async_update_data(self) -> WattWindowData:
         s = self.settings
-        np_entry = self._nordpool_entry()
-        if np_entry is None:
-            raise UpdateFailed("The Nord Pool integration is not set up")
-        area = s[CONF_AREA]
-        currency = np_entry.data.get("currency", "EUR")
         tz = self.hass.config.time_zone
         now = dt_util.utcnow()
         today = dt_util.as_local(now).date()
-
-        # Yesterday + today cover today's local day in zones at or ahead of CET
-        # (every Nord Pool area). Tomorrow's auction is published around
-        # 12:45 CET: don't ask for it before 10:30 UTC, and a published date is
-        # cached forever, so a normal day costs a handful of calls.
-        wanted = [today - timedelta(days=1), today]
-        if now.hour * 60 + now.minute >= 10 * 60 + 30 or today + timedelta(days=1) in self._price_cache:
-            wanted.append(today + timedelta(days=1))
-        responses = []
-        for d in wanted:
-            rows = await self._fetch_market_date(np_entry, area, d)
-            if rows:
-                responses.append({area: rows})
-        for old in [d for d in self._price_cache if d < today - timedelta(days=1)]:
-            del self._price_cache[old]
-        if not responses:
-            raise UpdateFailed(f"No Nord Pool prices for area {area}")
-
-        day_start = dt_util.as_utc(dt_util.start_of_local_day(today))
-        horizon_end = day_start + timedelta(days=3)
-        spots = nordpool.splice(
-            [iv for r in responses for iv in nordpool.parse_response(r, area)], day_start, horizon_end
-        )
+        local_midnight = dt_util.as_utc(dt_util.start_of_local_day(today))
+        try:
+            source = price_source(self.hass, s, self._price_cache)
+            fetched = await source.async_fetch(now, local_midnight, local_midnight + timedelta(days=3))
+        except PriceSourceError as err:
+            raise UpdateFailed(str(err)) from err
+        spots, currency = fetched.spots, fetched.currency
         years = {today.year, (today + timedelta(days=2)).year}
         holidays = await self._holiday_dates(s.get(CONF_COUNTRY) or "", years) if s.get(CONF_COUNTRY) else set()
 
@@ -266,9 +215,8 @@ class WattWindowCoordinator(DataUpdateCoordinator[WattWindowData]):
             warnings=warnings,
             period_windows=period_windows,
             periods=periods,
-            next_prices_at=nordpool.next_publication(
-                now, bool(self._price_cache.get(today + timedelta(days=1)))
-            ),
+            next_prices_at=fetched.next_prices_at,
+            price_source=source.name,
         )
 
     def settled(self, kind: str, minutes: int) -> bool:

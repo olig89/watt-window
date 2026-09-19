@@ -85,7 +85,7 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
             "currency": data.currency,
             "prices_until": _iso(data.prices_until),
             "next_prices_at": _iso(data.next_prices_at),
-            "price_source": "Nord Pool",
+            "price_source": data.price_source,
             "solar": {"configured": data.solar_configured, "ok": data.solar_ok, "title": solar_title},
             "warnings": data.warnings,
             "quarters": [

@@ -38,7 +38,7 @@
       },
       "solar_menu": {
         "title": "Solar panels",
-        "description": "Do you want windows to take a solar forecast into account? You can change this later under Configure.{note}",
+        "description": "Do you want Watt Windows to take a solar forecast into account? You can change this later under Configure.{note}",
         "menu_options": {
           "solar": "Yes, use my Forecast.Solar setup",
           "skip_solar": "Skip, no solar"
@@ -52,12 +52,12 @@
           "base_load_w": "What your house uses on its own"
         },
         "data_description": {
-          "base_load_w": "Your panels power the house first; only what's left over makes a window cheaper. If you don't know, leave 500 W. You can read the real figure from your energy dashboard at night, when nothing big is running."
+          "base_load_w": "Your panels power the house first; only what's left over makes a Watt Window cheaper. If you don't know, leave 500 W. You can read the real figure from your energy dashboard at night, when nothing big is running."
         }
       },
       "battery_menu": {
         "title": "Home battery",
-        "description": "Do you have a home battery? This is saved but doesn't change anything yet: battery-aware windows (storing spare solar for later) come in a later version.",
+        "description": "Do you have a home battery? This is saved but doesn't change anything yet: battery-aware Watt Windows (storing spare solar for later) come in a later version.",
         "menu_options": {
           "battery": "Yes, I have a home battery",
           "skip_battery": "Skip, no battery"
@@ -109,15 +109,15 @@
         }
       },
       "windows": {
-        "title": "Window lengths",
+        "title": "Watt Window lengths",
         "description": "Comma-separated, in hours, in steps of a quarter-hour. Each length gets its own sensors.",
         "data": {
-          "hours": "Window lengths (hours)"
+          "hours": "Watt Window lengths (hours)"
         }
       },
       "solar_menu": {
         "title": "Solar panels",
-        "description": "Do you want windows to take a solar forecast into account? You can change this later under Configure.{note}",
+        "description": "Do you want Watt Windows to take a solar forecast into account? You can change this later under Configure.{note}",
         "menu_options": {
           "solar": "Yes, use my Forecast.Solar setup",
           "skip_solar": "Skip, no solar"
@@ -131,12 +131,12 @@
           "base_load_w": "What your house uses on its own"
         },
         "data_description": {
-          "base_load_w": "Your panels power the house first; only what's left over makes a window cheaper. If you don't know, leave 500 W. You can read the real figure from your energy dashboard at night, when nothing big is running."
+          "base_load_w": "Your panels power the house first; only what's left over makes a Watt Window cheaper. If you don't know, leave 500 W. You can read the real figure from your energy dashboard at night, when nothing big is running."
         }
       },
       "battery_menu": {
         "title": "Home battery",
-        "description": "Do you have a home battery? This is saved but doesn't change anything yet: battery-aware windows (storing spare solar for later) come in a later version.",
+        "description": "Do you have a home battery? This is saved but doesn't change anything yet: battery-aware Watt Windows (storing spare solar for later) come in a later version.",
         "menu_options": {
           "battery": "Yes, I have a home battery",
           "skip_battery": "Skip, no battery"
@@ -148,8 +148,8 @@
       "bad_rate": "Every network rate needs a number.",
       "bad_hours": "The day rate must start before it ends, between 0 and 24.",
       "bad_vat": "VAT must be between 0 and 99 %.",
-      "no_windows": "Add at least one window length.",
-      "bad_window": "Window lengths must be between 0.25 and 24 hours, in quarter-hour steps.",
+      "no_windows": "Add at least one Watt Window length.",
+      "bad_window": "Watt Window lengths must be between 0.25 and 24 hours, in quarter-hour steps.",
       "bad_day_hours": "The day must start before it ends, between 0 and 24.",
       "bad_solar": "That Forecast.Solar setup no longer exists."
     }

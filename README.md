@@ -2,7 +2,7 @@
 
 Finds the cheapest hours to run things in Home Assistant, using Nord Pool spot prices, your own tariff, and an optional solar forecast.
 
-You choose window lengths (1, 2, 4 and 6 hours by default, plus any lengths you add). For each one, Watt Window tells you when the cheapest block starts and gives you a sensor that is **on** while that block is running. Point your automations at those sensors to start the dishwasher, washing machine, heat pump boost, car or battery charging, and so on.
+Each block of cheap hours it finds is a **Watt Window**. You choose the Watt Window lengths (1, 2, 4 and 6 hours by default, plus any lengths you add). For each one, Watt Window tells you when the cheapest block starts and gives you a sensor that is **on** while that block is running. Point your automations at those sensors to start the dishwasher, washing machine, heat pump boost, car or battery charging, and so on.
 
 Watt Window never switches anything itself. It only provides sensors, so your automations stay in charge.
 
