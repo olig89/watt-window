@@ -20,6 +20,11 @@ async def tallinn(hass: HomeAssistant):
     await hass.config.async_set_time_zone("Europe/Tallinn")
 
 
+def np_area(hass, area="EE") -> str:
+    """The setup screen's value for a Nord Pool setup + area."""
+    return f"{hass.config_entries.async_entries('nordpool')[0].entry_id}|{area}"
+
+
 def entry_data(**over):
     data = {
         "area": "EE",
@@ -48,7 +53,7 @@ async def test_config_flow_creates_entry(hass, tallinn, nordpool):
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
     assert result["step_id"] == "user"
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"area": "EE", "preset": "ee_vork2", "country": "ee"})
+        result["flow_id"], {"area": np_area(hass), "preset": "ee_vork2", "country": "ee"})
     assert result["step_id"] == "tariff"
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
@@ -80,7 +85,7 @@ async def test_config_flow_needs_nordpool(hass):
 async def test_config_flow_rejects_bad_day_hours(hass, tallinn, nordpool):
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"area": "EE", "preset": "custom_day_night", "country": ""})
+        result["flow_id"], {"area": np_area(hass), "preset": "custom_day_night", "country": ""})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         {"rate_day": 0.1, "rate_night": 0.05, "day_start": 22, "day_end": 7,
@@ -241,7 +246,7 @@ async def test_panel_saves_a_tariff_and_prices_follow(hass, tallinn, nordpool, h
 async def test_config_flow_with_solar_and_battery(hass, tallinn, nordpool, forecast_solar):
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"area": "EE", "preset": "ee_vork1", "country": "EE"})
+        result["flow_id"], {"area": np_area(hass), "preset": "ee_vork1", "country": "EE"})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         {"rate_flat": 0.0772, "vat_percent": 24, "margin": 0.006, "other_per_kwh": 0.02181, "export_fee": 0},
@@ -347,3 +352,34 @@ async def test_panel_saves_solar_and_day_hours(hass, tallinn, nordpool, forecast
     await ws.send_json({"id": 4, "type": "watt_window/save", "day_start": 20, "day_end": 8})
     msg = await ws.receive_json()
     assert not msg["success"] and msg["error"]["code"] == "bad_day_hours"
+
+
+@pytest.mark.freeze_time(NOW)
+async def test_setup_remembers_which_nord_pool_setup(hass, tallinn, nordpool):
+    other = MockConfigEntry(domain="nordpool", title="Finland", data={"areas": ["FI"], "currency": "EUR"})
+    other.add_to_hass(hass)
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    labels = [o["label"] for o in result["data_schema"].schema["area"].config["options"]]
+    assert labels[1] == "FI (Finland)"  # named only because there are two setups
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"area": np_area(hass), "preset": "ee_vork1", "country": "EE"})
+    assert result["step_id"] == "tariff"
+
+
+@pytest.mark.freeze_time("2026-09-21 08:00:00+00:00")  # 10:00 CEST: tomorrow not published
+async def test_horizon_is_reported_honestly(hass, tallinn, nordpool, hass_ws_client):
+    await setup(hass)
+    night = hass.states.get("sensor.watt_window_cheapest_overnight_2_h_window")
+    assert night.attributes["settled"] is False  # tonight runs past the known prices
+    ws = await hass_ws_client(hass)
+    await ws.send_json({"id": 1, "type": "watt_window/data"})
+    data = (await ws.receive_json())["result"]
+    assert data["next_prices_at"] == "2026-09-21T10:45:00+00:00"  # 12:45 CEST
+    assert data["price_source"] == "Nord Pool"
+
+
+@pytest.mark.freeze_time("2026-09-21 12:00:00+00:00")  # tomorrow published
+async def test_overnight_window_settles_once_prices_cover_the_night(hass, tallinn, nordpool):
+    await setup(hass)
+    night = hass.states.get("sensor.watt_window_cheapest_overnight_2_h_window")
+    assert night.attributes["settled"] is True

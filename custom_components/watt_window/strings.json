@@ -46,7 +46,7 @@
       },
       "solar": {
         "title": "Solar forecast",
-        "description": "Pick your Forecast.Solar setups. With panels on more than one roof plane, add Forecast.Solar once per plane and tick them all: the forecasts are added up.",
+        "description": "Pick your Forecast.Solar setup. If you tick more than one, their forecasts are added up.",
         "data": {
           "solar_entry_ids": "Forecast.Solar setups",
           "base_load_w": "What your house uses on its own"
@@ -125,7 +125,7 @@
       },
       "solar": {
         "title": "Solar forecast",
-        "description": "Pick your Forecast.Solar setups. With panels on more than one roof plane, add Forecast.Solar once per plane and tick them all: the forecasts are added up.",
+        "description": "Pick your Forecast.Solar setup. If you tick more than one, their forecasts are added up.",
         "data": {
           "solar_entry_ids": "Forecast.Solar setups",
           "base_load_w": "What your house uses on its own"

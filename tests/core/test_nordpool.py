@@ -103,3 +103,15 @@ def test_zone_behind_cet_needs_the_next_market_date():
     assert len(ivs) == 96 and np.gaps(ivs, start, end) == []
     two = np.local_day([market_day(d) for d in dates[:2]], day, tz="Europe/London")
     assert np.gaps(two, start, end) == [(end - timedelta(hours=1), end)]
+
+
+
+def test_next_publication_is_1245_cet_today_or_tomorrow():
+    from datetime import datetime, timezone
+    from custom_components.watt_window.core.nordpool import next_publication
+
+    morning = datetime(2026, 9, 21, 8, 0, tzinfo=timezone.utc)
+    assert next_publication(morning, False) == datetime(2026, 9, 21, 10, 45, tzinfo=timezone.utc)
+    assert next_publication(morning, True) == datetime(2026, 9, 22, 10, 45, tzinfo=timezone.utc)
+    winter = datetime(2026, 12, 1, 8, 0, tzinfo=timezone.utc)
+    assert next_publication(winter, False) == datetime(2026, 12, 1, 11, 45, tzinfo=timezone.utc)

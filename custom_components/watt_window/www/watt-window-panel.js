@@ -147,12 +147,12 @@ class WattWindowPanel extends HTMLElement {
           ${d.solar.configured ? `<div><div class="k">After solar</div><div class="v">${this._price(nowQ?.effective)}</div><div class="s">for a ${esc(d.settings.load_w)} W load</div></div>
           <div><div class="k">Solar forecast</div><div class="v">${nowQ ? (nowQ.solar_w / 1000).toFixed(1) : "–"} kW</div><div class="s">&nbsp;</div></div>` : ""}
         </div>
-        <div class="meta">Prices known until ${d.prices_until ? `${this._when(d.prices_until)}` : "–"} · ${solarLine}</div>
+        <div class="meta">${this._horizon(d)} · ${solarLine}</div>
         ${d.warnings.map((w) => `<div class="meta bad">${esc(w)}</div>`).join("")}
       </div>
       <h2>Cheapest windows</h2>
       <div class="windows">${windows || `<div class="card">No windows set up. Add some in Settings.</div>`}</div>
-      <h2>The next two days</h2>
+      <h2>Every price we know</h2>
       <div class="card">
         ${this._chart(d)}
         <div class="legend">
@@ -161,17 +161,29 @@ class WattWindowPanel extends HTMLElement {
           <span><i class="sw band" style="background:${WINDOW_COLOURS[Math.max(0, d.windows.findIndex((w) => w.minutes === this._highlight)) % WINDOW_COLOURS.length]}"></i>Highlighted window:
             <select id="hl">${d.windows.map((w) => `<option value="${w.minutes}" ${w.minutes === this._highlight ? "selected" : ""}>${esc(w.label)}</option>`).join("")}</select></span>
         </div>
-        <p class="explain">Each bar is the price of one quarter-hour: Nord Pool spot plus your network rate, fees and VAT.
+        <p class="explain"><b>Why the chart stops where it does:</b> ${esc(d.price_source)} sets tomorrow's prices once a day, at an auction that closes at noon Central European time; they're published about 45 minutes later${d.next_prices_at ? ` (${this._when(d.next_prices_at)} your time)` : ""}. Before that, nobody knows prices beyond midnight CET, so the furthest anyone can see is roughly a day and a half, and some mornings less than a day.</p>
+        <p class="explain">Each bar is the price of one quarter-hour: ${esc(d.price_source)} spot plus your network rate, fees and VAT.
         ${d.solar.configured ? "Where your panels are forecast to produce more than your typical house load, the spare output covers the load first, so that part only costs the export price you'd otherwise have earned." : ""}
         A window is the run of quarter-hours with the lowest average. Once a window has started it stays put, even if prices change.</p>
       </div>`;
+  }
+
+  _horizon(d) {
+    const until = d.prices_until ? this._when(d.prices_until) : "–";
+    let next = "";
+    if (d.next_prices_at) {
+      next = new Date(d.next_prices_at) <= new Date(d.now)
+        ? " · the next day's prices are due any minute"
+        : ` · the next day's arrive ${this._when(d.next_prices_at)}`;
+    }
+    return `Prices known until ${until}${next}`;
   }
 
   _windowCard(w, i, nowQ) {
     const colour = WINDOW_COLOURS[i % WINDOW_COLOURS.length];
     if (!w.start) {
       return `<div class="card win" style="--c:${colour}"><div class="wl">${esc(w.label)}</div>
-        <div class="s">Not enough price data yet. Tomorrow's prices usually arrive around 14:00.</div></div>`;
+        <div class="s">Not enough prices published yet for a window this long.${this._data.next_prices_at ? ` More arrive ${this._when(this._data.next_prices_at)}.` : ""}</div></div>`;
     }
     const when = w.active
       ? `<span class="chip">Now</span> until ${this._time(w.end)}`
@@ -182,6 +194,7 @@ class WattWindowPanel extends HTMLElement {
       <div class="when">${when}</div>
       ${!w.active && w.latest_start && w.latest_start !== w.start
         ? `<div class="s flex">Same price if you start any time up to ${this._time(w.latest_start)}</div>` : ""}
+      <div class="s muted">Cheapest in the prices known so far</div>
       <div class="s">${this._price(w.average_price)} on average${w.solar_share > 0 ? ` · ${Math.round(w.solar_share * 100)}% solar` : ""}</div>
       <div class="s">≈ ${this._money(w.cost)} to run ${esc(this._data.settings.load_w)} W${saving != null && saving > 0 && !w.active ? ` · ${saving}% below the price now` : ""}</div>
       <div class="split">
@@ -194,7 +207,8 @@ class WattWindowPanel extends HTMLElement {
   _periodLine(name, p) {
     if (!p) return `<div class="s"><b>${name}:</b> not enough prices yet</div>`;
     const when = p.active ? `now until ${this._time(p.end)}` : `${this._dayWord(p.start)} ${this._time(p.start)}–${this._time(p.end)}`;
-    return `<div class="s"><b>${name}:</b> ${when} · ${this._price(p.average_price)}</div>`;
+    const note = p.settled || p.active ? "" : ` <span class="muted">· may change when the next prices arrive</span>`;
+    return `<div class="s"><b>${name}:</b> ${when} · ${this._price(p.average_price)}${note}</div>`;
   }
 
   _chart(d) {
@@ -264,7 +278,7 @@ class WattWindowPanel extends HTMLElement {
       svg += `<line x1="${x(now)}" x2="${x(now)}" y1="${top}" y2="${top + plotH}" stroke="#e53935" stroke-width="1.5"/>`;
       svg += `<text x="${x(now) + 4}" y="${top + 10}" class="ax now">now</text>`;
     }
-    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Electricity price and solar forecast for the next two days">${svg}</svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Electricity price and solar forecast for every quarter-hour with a published price">${svg}</svg>`;
   }
 
   _bindOverview() {
@@ -317,9 +331,9 @@ class WattWindowPanel extends HTMLElement {
       <div class="card">
         <h3>Solar</h3>
         ${d.settings.solar_options.length
-          ? `<p class="s">Tick every Forecast.Solar setup that covers your panels. With more than one roof plane, add Forecast.Solar once per plane: the forecasts are added up.</p>
+          ? `<p class="s">Tick the Forecast.Solar setup that covers your panels. If you tick more than one, their forecasts are added up.</p>
              ${d.settings.solar_options.map((o) => `<label class="check"><input type="checkbox" data-solar="${esc(o.entry_id)}" ${f.solar_entry_ids.includes(o.entry_id) ? "checked" : ""}> ${esc(o.title)}</label>`).join("")}`
-          : `<p class="s">No Forecast.Solar setup yet. <a href="/config/integrations/dashboard/add?domain=forecast_solar">Add Forecast.Solar</a> (free; add it once per roof plane), then come back here and tick it.</p>`}
+          : `<p class="s">No Forecast.Solar setup yet. <a href="/config/integrations/dashboard/add?domain=forecast_solar">Add Forecast.Solar</a> then come back here and tick it.</p>`}
         <div class="grid" style="margin-top:12px">
           <label>What your house uses on its own (W)<input type="number" min="0" step="50" data-f="base_load_w" value="${f.base_load_w}"></label>
         </div>
@@ -443,6 +457,7 @@ const STYLES = `
   .wl { font-size:13px; font-weight:500; color: var(--c); text-transform:uppercase; letter-spacing:.04em; }
   .when { font-size:18px; font-weight:500; margin:4px 0; }
   .flex { color: var(--primary-text-color); margin-bottom:4px; }
+  .muted { color: var(--secondary-text-color); font-style: italic; }
   .split { border-top:1px solid var(--divider-color); margin-top:8px; padding-top:6px; }
   .chip { display:inline-flex; align-items:center; gap:4px; background: var(--c, var(--primary-color)); color:#fff; border-radius:10px; padding:1px 8px; font-size:12px; }
   .chip.big { background: var(--secondary-background-color); color: var(--primary-text-color); font-size:14px; padding:4px 4px 4px 10px; }

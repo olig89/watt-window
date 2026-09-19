@@ -23,6 +23,7 @@ from .const import (
     CONF_DAY_END,
     CONF_DAY_START,
     CONF_LOAD_W,
+    CONF_NORDPOOL_ENTRY,
     CONF_TARIFF,
     CONF_WINDOWS,
     DEFAULT_BASE_LOAD_W,
@@ -61,6 +62,8 @@ class WattWindowData:
     warnings: list[str] = field(default_factory=list)
     # "day" / "night" -> minutes -> cheapest window inside that period.
     period_windows: dict[str, dict[int, Window | None]] = field(default_factory=dict)
+    # Honest horizon: prices beyond ``prices_until`` don't exist yet anywhere.
+    next_prices_at: datetime | None = None
     periods: dict[str, dict[int, tuple[datetime, datetime] | None]] = field(default_factory=dict)
 
     def window(self, kind: str, minutes: int) -> Window | None:
@@ -92,7 +95,12 @@ class WattWindowCoordinator(DataUpdateCoordinator[WattWindowData]):
         return settings_of(self.config_entry)
 
     def _nordpool_entry(self) -> ConfigEntry | None:
+        """The chosen Nord Pool setup (no entities involved: we call its price service)."""
         entries = self.hass.config_entries.async_loaded_entries(NORDPOOL_DOMAIN)
+        chosen = self.settings.get(CONF_NORDPOOL_ENTRY)
+        for e in entries:
+            if e.entry_id == chosen:
+                return e
         return entries[0] if entries else None
 
     async def _fetch_market_date(self, entry: ConfigEntry, area: str, d: date) -> list[dict]:
@@ -258,4 +266,15 @@ class WattWindowCoordinator(DataUpdateCoordinator[WattWindowData]):
             warnings=warnings,
             period_windows=period_windows,
             periods=periods,
+            next_prices_at=nordpool.next_publication(
+                now, bool(self._price_cache.get(today + timedelta(days=1)))
+            ),
         )
+
+    def settled(self, kind: str, minutes: int) -> bool:
+        """True when every price the window could use is already published."""
+        data = self.data
+        if kind == "any" or data is None or data.prices_until is None:
+            return False  # a later day could always be cheaper
+        span = data.periods.get(kind, {}).get(minutes)
+        return bool(span) and span[1] <= data.prices_until

@@ -21,11 +21,25 @@ Nothing here averages to hourly.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Iterable, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 DEFAULT_TZ = "UTC"
+
+# The day-ahead auction closes at 12:00 CET and results are published at about
+# 12:45 CET. The market day runs midnight to midnight CET.
+MARKET_TZ = "Europe/Berlin"
+PUBLISH_TIME = (12, 45)
+
+
+def next_publication(now: datetime, published_tomorrow: bool) -> datetime:
+    """When the next market day's prices should appear (aware datetime, UTC)."""
+    zone = ZoneInfo(MARKET_TZ)
+    local = now.astimezone(zone)
+    day = local.date() + timedelta(days=1 if published_tomorrow else 0)
+    return datetime.combine(day, time(*PUBLISH_TIME), tzinfo=zone).astimezone(timezone.utc)
+
 
 MWH_PER_KWH = 1 / 1000
 

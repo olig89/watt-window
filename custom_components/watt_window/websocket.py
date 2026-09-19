@@ -66,10 +66,11 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
     chosen = solar_entry_ids(s)
     solar_title = ", ".join(o["title"] for o in solar_options if o["entry_id"] in chosen) or None
 
-    def brief(w):
+    def brief(w, kind, m):
         if w is None:
             return None
         return {
+            "settled": coord.settled(kind, m),
             "start": _iso(w.start),
             "end": _iso(w.end),
             "latest_start": _iso(w.latest_start),
@@ -83,6 +84,8 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
             "now": _iso(data.now),
             "currency": data.currency,
             "prices_until": _iso(data.prices_until),
+            "next_prices_at": _iso(data.next_prices_at),
+            "price_source": "Nord Pool",
             "solar": {"configured": data.solar_configured, "ok": data.solar_ok, "title": solar_title},
             "warnings": data.warnings,
             "quarters": [
@@ -108,8 +111,8 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
                     "solar_share": round(w.solar_share, 3) if w else None,
                     "cost": round(w.cost, 4) if w else None,
                     "active": bool(w and w.contains(data.now)),
-                    "day": brief(data.window("day", m)),
-                    "night": brief(data.window("night", m)),
+                    "day": brief(data.window("day", m), "day", m),
+                    "night": brief(data.window("night", m), "night", m),
                 }
                 for m, w in sorted(data.windows.items())
             ],

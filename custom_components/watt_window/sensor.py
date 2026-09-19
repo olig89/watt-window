@@ -173,4 +173,6 @@ class WindowStartSensor(_Base):
         return {
             "period_start": span[0].isoformat() if span else None,
             "period_end": span[1].isoformat() if span else None,
+            # False while part of the period has no published prices: it may still move.
+            "settled": self.coordinator.settled(self._kind, self._minutes),
         }

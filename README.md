@@ -11,11 +11,15 @@ Watt Window never switches anything itself. It only provides sensors, so your au
 - **Spot prices** from the built-in [Nord Pool](https://www.home-assistant.io/integrations/nordpool/) integration, at 15-minute resolution. Tomorrow's prices are fetched once they are published, usually early afternoon.
 - **Your tariff:** a network rate that can be flat, day/night, or day/night with winter peaks (Estonia's Võrk 5), plus supplier margin, other per-kWh charges and VAT. Presets for Elektrilevi Võrk 1, 2, 4 and 5 are included. Anyone else can enter their own rates.
 - **Public holidays** for day/night tariffs that charge the night rate on holidays, from your country code.
-- **Solar (optional)** from the built-in [Forecast.Solar](https://www.home-assistant.io/integrations/forecast_solar/) integration. Panels on more than one roof plane? Forecast.Solar asks for a paid API key to put two planes in one setup, but you can add Forecast.Solar **once per plane** for free and tick them all: Watt Window adds the forecasts up. Your panels first cover your typical house load. Any spare output then covers the load you want to run, and that share costs only the export price you'd otherwise have earned. So a sunny midday can beat a cheap night, and it only does when it really is cheaper.
+- **Solar (optional)** from the built-in [Forecast.Solar](https://www.home-assistant.io/integrations/forecast_solar/) integration. If you tick more than one Forecast.Solar setup, their forecasts are added up. (Forecast.Solar needs a paid API key for more than one roof plane in a setup.) Your panels first cover your typical house load. Any spare output then covers the load you want to run, and that share costs only the export price you'd otherwise have earned. So a sunny midday can beat a cheap night, and it only does when it really is cheaper.
 
 When prices are flat for a while (common at night, or on a day/night tariff at weekends), several windows can start at the same time: ties go to the earliest start. The sidebar page then says how late you could start for the same price, and the `latest_same_price_start` attribute lets an automation use that.
 
 Each length also gets a cheapest **daytime** and cheapest **overnight** window, for jobs that must happen in one or the other. The day runs 08:00-20:00 by default (change it on the Settings tab); a window is searched in the current day or night if enough of it is left, otherwise in the next one.
+
+**How far ahead it can see:** only as far as prices are published. Nord Pool's day-ahead auction closes at 12:00 CET and prices appear at about 12:45 CET for the next day (midnight to midnight CET). So from early afternoon you can see to the end of tomorrow; in the morning, only to the end of today. The page says when the next prices are due, and the daytime/overnight sensors have a `settled` attribute that stays `false` while part of their period isn't priced yet.
+
+Watt Window reads prices through the Nord Pool integration's own price service, not its entities, so it doesn't matter what your Nord Pool sensors are called. If you have more than one Nord Pool setup, you pick which one (and which area) during setup.
 
 Once a window has started, it stays put. A price update mid-window will not move it.
 

@@ -34,6 +34,7 @@ from .const import (
     CONF_COUNTRY,
     CONF_HAS_BATTERY,
     CONF_LOAD_W,
+    CONF_NORDPOOL_ENTRY,
     CONF_PRESET,
     CONF_SOLAR_ENTRIES,
     CONF_TARIFF,
@@ -152,7 +153,7 @@ class _SharedSteps:
             description_placeholders={
                 "note": "" if has_forecast else
                 "\n\n**No Forecast.Solar setup found.** [Add Forecast.Solar](/config/integrations/dashboard/add?domain=forecast_solar) "
-                "(once per roof plane, it's free), then turn solar on from Watt Window's Settings tab. Skip for now."
+                "then turn solar on from Watt Window's Settings tab. Skip for now."
             },
         )
 
@@ -197,10 +198,20 @@ class WattWindowConfigFlow(_SharedSteps, ConfigFlow, domain=DOMAIN):
         np_entries = self.hass.config_entries.async_entries(NORDPOOL_DOMAIN)
         if not np_entries:
             return self.async_abort(reason="no_nordpool")
-        areas = list(np_entries[0].data.get("areas") or [])
+        # One choice per (Nord Pool setup, area); the setup is named only if there are several.
+        choices = [
+            SelectOptionDict(
+                value=f"{e.entry_id}|{a}",
+                label=a if len(np_entries) == 1 else f"{a} ({e.title or 'Nord Pool'})",
+            )
+            for e in np_entries
+            for a in (e.data.get("areas") or [])
+        ]
         if user_input is not None:
+            entry_id, _, area = user_input[CONF_AREA].rpartition("|")
             self._store = {
-                CONF_AREA: user_input[CONF_AREA],
+                CONF_AREA: area,
+                CONF_NORDPOOL_ENTRY: entry_id or np_entries[0].entry_id,
                 CONF_COUNTRY: (user_input.get(CONF_COUNTRY) or "").strip().upper(),
                 CONF_PRESET: user_input[CONF_PRESET],
                 CONF_TARIFF: tariff_from_preset(user_input[CONF_PRESET]),
@@ -210,8 +221,8 @@ class WattWindowConfigFlow(_SharedSteps, ConfigFlow, domain=DOMAIN):
         default_preset = "ee_vork2" if default_country == "EE" else "custom_day_night"
         schema = vol.Schema(
             {
-                vol.Required(CONF_AREA, default=areas[0] if areas else None): SelectSelector(
-                    SelectSelectorConfig(options=areas, mode=SelectSelectorMode.DROPDOWN)
+                vol.Required(CONF_AREA, default=choices[0]["value"] if choices else None): SelectSelector(
+                    SelectSelectorConfig(options=choices, mode=SelectSelectorMode.DROPDOWN)
                 ),
                 vol.Required(CONF_PRESET, default=default_preset): _preset_selector(False),
                 vol.Optional(CONF_COUNTRY, default=default_country): TextSelector(),

@@ -6,11 +6,12 @@ DOMAIN = "watt_window"
 NAME = "Watt Window"
 
 CONF_AREA = "area"
+CONF_NORDPOOL_ENTRY = "nordpool_entry_id"  # which Nord Pool setup (several may exist)
 CONF_COUNTRY = "country"
 CONF_PRESET = "preset"
 CONF_TARIFF = "tariff"
 CONF_SOLAR_ENTRY = "solar_entry_id"  # 0.1-0.3: a single Forecast.Solar entry
-CONF_SOLAR_ENTRIES = "solar_entry_ids"  # one per roof plane; forecasts are added up
+CONF_SOLAR_ENTRIES = "solar_entry_ids"  # several solar forecast setups; their forecasts are added up
 CONF_DAY_START = "day_window_start"  # local hour the "daytime" windows start
 CONF_DAY_END = "day_window_end"
 CONF_BASE_LOAD_W = "base_load_w"
