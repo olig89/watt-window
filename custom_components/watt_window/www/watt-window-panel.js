@@ -23,12 +23,16 @@ const RATE_KEYS = {
 const PLAN_NAMES = { flat: "One rate", day_night: "Day / night", vork5: "Day / night / winter peaks (Võrk 5)" };
 // Must match manifest.json (a test checks). Compared with the running integration
 // so a tab still holding old page code after an update says so.
-const PANEL_VERSION = "0.8.1";
+const PANEL_VERSION = "0.8.2";
 
 const DIRECTIONS = [
   [0, "North"], [45, "North-east"], [90, "East"], [135, "South-east"],
   [180, "South"], [225, "South-west"], [270, "West"], [315, "North-west"],
 ];
+function compassName(deg) {
+  const names = ["North", "North-east", "East", "South-east", "South", "South-west", "West", "North-west"];
+  return "About " + names[Math.round((((Number(deg) % 360) + 360) % 360) / 45) % 8].toLowerCase();
+}
 const WINDOW_COLOURS = ["#2e7d32", "#1565c0", "#ef6c00", "#6a1b9a", "#00838f", "#ad1457", "#5d4037"];
 
 const esc = (s) =>
@@ -395,17 +399,19 @@ class WattWindowPanel extends HTMLElement {
     const rows = f.solar_planes.map((p, i) => {
       const known = DIRECTIONS.some(([deg]) => deg === Number(p.direction));
       const dirOptions = DIRECTIONS.map(([deg, name]) => `<option value="${deg}" ${Number(p.direction) === deg ? "selected" : ""}>${name}</option>`).join("")
-        + (known ? "" : `<option value="${p.direction}" selected>${p.direction}°</option>`);
+        + (known ? "" : `<option value="${p.direction}" selected>${compassName(p.direction)} (${Math.round(p.direction)}°)</option>`);
       return `<div class="plane">
         <label>Name<input type="text" data-plane="${i}" data-key="name" value="${esc(p.name)}"></label>
         <label>Size (kWp)<input type="number" min="0.1" step="0.1" data-plane="${i}" data-key="kwp" value="${p.kwp}"></label>
         <label>Faces<select data-plane="${i}" data-key="direction">${dirOptions}</select></label>
+        <label>Exact bearing (°)<input type="number" min="0" max="359" step="1" data-plane="${i}" data-key="direction" value="${Math.round(p.direction)}"></label>
         <label>Tilt (°)<input type="number" min="0" max="90" step="1" data-plane="${i}" data-key="tilt" value="${p.tilt}"></label>
         ${f.solar_planes.length > 1 ? `<button class="btn small" data-rmplane="${i}" aria-label="Remove ${esc(p.name)}">Remove</button>` : ""}
       </div>`;
     }).join("");
     return `<p class="s">Only the size matters to start: south-facing at 35° is assumed until you say otherwise.
-      If your panels are on more than one roof slope, add each one: its own direction and tilt make the forecast more accurate. Flat roof: tilt 0.</p>
+      If your panels are on more than one roof slope, add each one: its own direction and tilt make the forecast more accurate. Flat roof: tilt 0.
+      <b>Faces</b> is fine as a rough pick; for steep roofs an <b>exact bearing</b> is worth it (0 north, 90 east, 180 south, 270 west; a satellite map is enough to measure it). <b>Tilt</b> is the roof pitch from horizontal, as on building drawings.</p>
       ${rows}
       <button class="btn small" id="addplane">Add a roof plane</button>
       <p class="s credit">Weather data by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a> (CC BY 4.0).</p>`;
@@ -444,6 +450,10 @@ class WattWindowPanel extends HTMLElement {
     $("[data-plane]").forEach((i) => i.addEventListener("change", () => {
       const p = f.solar_planes[Number(i.dataset.plane)];
       p[i.dataset.key] = i.dataset.key === "name" ? i.value : Number(i.value);
+      if (i.dataset.key === "direction") {
+        p.direction = ((Math.round(p.direction) % 360) + 360) % 360;
+        this._render(); // keep the dropdown and the exact bearing in step
+      }
     }));
     $("[data-rmplane]").forEach((b) => b.addEventListener("click", () => {
       f.solar_planes.splice(Number(b.dataset.rmplane), 1);
