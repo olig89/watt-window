@@ -21,6 +21,10 @@ const RATE_KEYS = {
   vork5: ["day", "night", "weekday_peak", "weekend_peak"],
 };
 const PLAN_NAMES = { flat: "One rate", day_night: "Day / night", vork5: "Day / night / winter peaks (Võrk 5)" };
+// Must match manifest.json (a test checks). Compared with the running integration
+// so a tab still holding old page code after an update says so.
+const PANEL_VERSION = "0.8.1";
+
 const DIRECTIONS = [
   [0, "North"], [45, "North-east"], [90, "East"], [135, "South-east"],
   [180, "South"], [225, "South-west"], [270, "West"], [315, "North-west"],
@@ -120,6 +124,7 @@ class WattWindowPanel extends HTMLElement {
         <button class="tab ${this._tab === "settings" ? "on" : ""}" data-tab="settings">Settings</button>
       </div>
       <div class="content">
+        ${d && d.version && d.version !== PANEL_VERSION ? `<div class="card warn">Watt Window was updated to ${esc(d.version)}, but this page is still the old version (${PANEL_VERSION}). <button class="btn small" id="reload">Reload the page</button></div>` : ""}
         ${this._error ? `<div class="card warn">Couldn't load Watt Window: ${esc(this._error)}</div>` : ""}
         ${!d && !this._error ? `<div class="card">Loading…</div>` : ""}
         ${d ? (this._tab === "overview" ? this._overview(d) : this._settings(d)) : ""}
@@ -134,6 +139,8 @@ class WattWindowPanel extends HTMLElement {
         this._render();
       })
     );
+    const reload = this.shadowRoot.getElementById("reload");
+    if (reload) reload.addEventListener("click", () => location.reload());
     if (d && this._tab === "overview") this._bindOverview();
     if (d && this._tab === "settings") this._bindSettings();
   }

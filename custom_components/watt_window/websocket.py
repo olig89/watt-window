@@ -8,6 +8,7 @@ import voluptuous as vol
 
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.loader import async_get_integration
 
 from .const import (
     CONF_BASE_LOAD_W,
@@ -84,6 +85,9 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
         msg["id"],
         {
             "entry_id": entry.entry_id,
+            # The page compares this with its own version: after an update a browser
+            # tab keeps the old page code until it is reloaded.
+            "version": str((await async_get_integration(hass, DOMAIN)).version),
             "now": _iso(data.now),
             "currency": data.currency,
             "prices_until": _iso(data.prices_until),

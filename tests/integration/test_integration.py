@@ -476,3 +476,16 @@ async def test_zero_export_makes_spare_solar_free(hass, tallinn, nordpool, forec
     assert st.state == "2026-09-22T10:00:00+00:00"
     assert st.attributes["average_price"] == 0.0
     assert st.attributes["solar_share"] == 1.0
+
+
+@pytest.mark.freeze_time("2026-09-21 12:00:00+00:00")
+async def test_panel_api_reports_the_running_version(hass, tallinn, nordpool, hass_ws_client):
+    import json
+    from pathlib import Path
+
+    await setup(hass)
+    ws = await hass_ws_client(hass)
+    await ws.send_json({"id": 1, "type": "watt_window/data"})
+    data = (await ws.receive_json())["result"]
+    manifest = Path(__file__).resolve().parents[2] / "custom_components" / "watt_window" / "manifest.json"
+    assert data["version"] == json.loads(manifest.read_text(encoding="utf-8"))["version"]
