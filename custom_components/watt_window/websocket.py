@@ -81,6 +81,7 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
                     "label": window_label(m),
                     "start": _iso(w.start) if w else None,
                     "end": _iso(w.end) if w else None,
+                    "latest_start": _iso(w.latest_start) if w and w.latest_start else None,
                     "average_price": round(w.average_price, 5) if w else None,
                     "average_import_price": round(w.average_import_price, 5) if w else None,
                     "solar_share": round(w.solar_share, 3) if w else None,

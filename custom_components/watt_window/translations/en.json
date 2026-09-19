@@ -36,17 +36,6 @@
           "other_per_kwh": "Taxes and fees charged per kWh, e.g. renewable fee, excise, balancing charge."
         }
       },
-      "loads": {
-        "title": "Your loads",
-        "data": {
-          "base_load_w": "Typical house load",
-          "load_w": "Power of the things you'll run in a window"
-        },
-        "data_description": {
-          "base_load_w": "What the house draws on its own. With solar, the panels cover this first.",
-          "load_w": "e.g. about 1000 W for a dishwasher, 2000 W for a washing machine heating water. Used for cost estimates."
-        }
-      },
       "solar_menu": {
         "title": "Solar panels",
         "description": "Do you want windows to take a solar forecast into account? You can change this later under Configure.{note}",
@@ -57,9 +46,13 @@
       },
       "solar": {
         "title": "Solar forecast",
-        "description": "Pick your Forecast.Solar setup. Windows will prefer times when your panels are forecast to cover the load.",
+        "description": "Pick your Forecast.Solar setup. Windows will favour times when your panels are forecast to make more than the house is using.",
         "data": {
-          "solar_entry_id": "Forecast.Solar"
+          "solar_entry_id": "Forecast.Solar",
+          "base_load_w": "What your house uses on its own"
+        },
+        "data_description": {
+          "base_load_w": "Your panels power the house first; only what's left over makes a window cheaper. If you don't know, leave 500 W. You can read the real figure from your energy dashboard at night, when nothing big is running."
         }
       },
       "battery_menu": {
@@ -120,17 +113,6 @@
           "hours": "Window lengths (hours)"
         }
       },
-      "loads": {
-        "title": "Your loads",
-        "data": {
-          "base_load_w": "Typical house load",
-          "load_w": "Power of the things you'll run in a window"
-        },
-        "data_description": {
-          "base_load_w": "What the house draws on its own. With solar, the panels cover this first.",
-          "load_w": "e.g. about 1000 W for a dishwasher, 2000 W for a washing machine heating water. Used for cost estimates."
-        }
-      },
       "solar_menu": {
         "title": "Solar panels",
         "description": "Do you want windows to take a solar forecast into account? You can change this later under Configure.{note}",
@@ -141,9 +123,13 @@
       },
       "solar": {
         "title": "Solar forecast",
-        "description": "Pick your Forecast.Solar setup. Windows will prefer times when your panels are forecast to cover the load.",
+        "description": "Pick your Forecast.Solar setup. Windows will favour times when your panels are forecast to make more than the house is using.",
         "data": {
-          "solar_entry_id": "Forecast.Solar"
+          "solar_entry_id": "Forecast.Solar",
+          "base_load_w": "What your house uses on its own"
+        },
+        "data_description": {
+          "base_load_w": "Your panels power the house first; only what's left over makes a window cheaper. If you don't know, leave 500 W. You can read the real figure from your energy dashboard at night, when nothing big is running."
         }
       },
       "battery_menu": {

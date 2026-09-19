@@ -158,4 +158,6 @@ class WindowStartSensor(_Base):
             "average_import_price": round(w.average_import_price, 5) if w else None,
             "solar_share": round(w.solar_share, 3) if w else None,
             "estimated_cost": round(w.cost, 4) if w else None,
+            # Any start up to here costs the same; lets an automation wait until it suits you.
+            "latest_same_price_start": w.latest_start.isoformat() if w and w.latest_start else None,
         }

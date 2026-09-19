@@ -115,3 +115,21 @@ def test_custom_day_night_hours_are_respected():
 
 def test_export_fee_reduces_export_value():
     assert export_price(0.10, {"export_fee": 0.01}) == pytest.approx(0.09)
+
+
+def test_flat_cheap_stretch_reports_how_late_you_can_start():
+    """Sunday 2026-09-20 in EE: spot ~0 from 01:00 to 08:45, so every start ties."""
+    from datetime import datetime, timedelta, timezone
+    from custom_components.watt_window.core.windows import Quarter, cheapest_window
+
+    t0 = datetime(2026, 9, 19, 22, 0, tzinfo=timezone.utc)
+    qs = []
+    for k in range(40):  # 10 h
+        price = 0.0706 if k < 28 else 0.09  # flat for 7 h, then dearer
+        qs.append(Quarter(start=t0 + timedelta(minutes=15 * k), end=t0 + timedelta(minutes=15 * (k + 1)),
+                          spot=0.0, import_price=price, export_price=0.0, solar_w=0.0, tariff_key="night"))
+    w = cheapest_window(qs, timedelta(hours=2), load_w=1000)
+    assert w.start == t0  # ties go to the earliest start
+    assert w.latest_start == t0 + timedelta(hours=5)  # 2 h run still inside the flat 7 h
+    one_off = cheapest_window(qs[:8] + [], timedelta(hours=2), load_w=1000)
+    assert one_off.latest_start == one_off.start  # only one start fits

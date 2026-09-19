@@ -180,6 +180,8 @@ class WattWindowPanel extends HTMLElement {
     return `<div class="card win" style="--c:${colour}">
       <div class="wl">${esc(w.label)}</div>
       <div class="when">${when}</div>
+      ${!w.active && w.latest_start && w.latest_start !== w.start
+        ? `<div class="s flex">Same price if you start any time up to ${this._time(w.latest_start)}</div>` : ""}
       <div class="s">${this._price(w.average_price)} on average${w.solar_share > 0 ? ` · ${Math.round(w.solar_share * 100)}% solar` : ""}</div>
       <div class="s">≈ ${this._money(w.cost)} to run ${esc(this._data.settings.load_w)} W${saving != null && saving > 0 && !w.active ? ` · ${saving}% below the price now` : ""}</div>
     </div>`;
@@ -294,8 +296,8 @@ class WattWindowPanel extends HTMLElement {
       <div class="card">
         <h3>Your load</h3>
         <div class="grid">
-          <label>Power of the things you run in a window (W)<input type="number" min="0" step="50" data-f="load_w" value="${f.load_w}"></label>
-          <label>Typical house load (W)<input type="number" min="0" step="50" data-f="base_load_w" value="${f.base_load_w}"></label>
+          <label>Appliance power, for cost estimates (W)<input type="number" min="0" step="50" data-f="load_w" value="${f.load_w}"></label>
+          <label>What your house uses on its own (W)<input type="number" min="0" step="50" data-f="base_load_w" value="${f.base_load_w}"></label>
         </div>
         <label class="check"><input type="checkbox" id="battery" ${f.has_battery ? "checked" : ""}> I have a home battery</label>
         <p class="s">Leave this off for now. Battery-aware windows (store spare solar for later instead of using it straight away) come in a later version; the setting is saved but changes nothing yet.</p>
@@ -401,6 +403,7 @@ const STYLES = `
   .windows .card { margin:0; border-left:4px solid var(--c); }
   .wl { font-size:13px; font-weight:500; color: var(--c); text-transform:uppercase; letter-spacing:.04em; }
   .when { font-size:18px; font-weight:500; margin:4px 0; }
+  .flex { color: var(--primary-text-color); margin-bottom:4px; }
   .chip { display:inline-flex; align-items:center; gap:4px; background: var(--c, var(--primary-color)); color:#fff; border-radius:10px; padding:1px 8px; font-size:12px; }
   .chip.big { background: var(--secondary-background-color); color: var(--primary-text-color); font-size:14px; padding:4px 4px 4px 10px; }
   .chip button { border:none; background:none; color: var(--secondary-text-color); font-size:16px; cursor:pointer; padding:0 4px; }

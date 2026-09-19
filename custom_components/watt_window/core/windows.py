@@ -48,6 +48,10 @@ class Window:
     average_import_price: float
     solar_share: float  # 0..1 of the load expected to be covered by solar
     cost: float  # for the whole window at load_w
+    # Latest start that costs the same (within SAME_PRICE_TOLERANCE), counting on
+    # from ``start`` without a dearer start in between. Equal to ``start`` when only
+    # one start is that cheap.
+    latest_start: datetime | None = None
 
     def contains(self, t: datetime) -> bool:
         return self.start <= t < self.end
@@ -85,6 +89,11 @@ def price_quarters(
     return out
 
 
+# Starts whose average is within this of the best (per kWh, e.g. 0.05 c) count as
+# "the same price": nobody moves a dishwasher for less.
+SAME_PRICE_TOLERANCE = 0.0005
+
+
 def cheapest_window(
     quarters: Sequence[Quarter],
     length: timedelta,
@@ -102,16 +111,21 @@ def cheapest_window(
     qs = [q for q in quarters if earliest is None or q.start >= earliest]
     best: tuple[float, int] | None = None
     prices = [q.effective_price(load_w, base_load_w) for q in qs]
+    averages: dict[int, float] = {}
     for i in range(len(qs) - n + 1):
         run = qs[i : i + n]
         if any(b.start != a.end for a, b in zip(run, run[1:])):
             continue  # a gap in the data: not a real contiguous window
         avg = sum(prices[i : i + n]) / n
+        averages[i] = avg
         if best is None or avg < best[0] - 1e-12:
             best = (avg, i)
     if best is None:
         return None
     avg, i = best
+    last = i
+    while last + 1 in averages and averages[last + 1] <= avg + SAME_PRICE_TOLERANCE:
+        last += 1
     run = qs[i : i + n]
     kwh_per_quarter = load_w / 1000 * 0.25
     covered = [
@@ -125,4 +139,5 @@ def cheapest_window(
         average_import_price=sum(q.import_price for q in run) / n,
         solar_share=sum(covered) / n,
         cost=sum(p * kwh_per_quarter for p in prices[i : i + n]),
+        latest_start=qs[last].start,
     )

@@ -13,6 +13,8 @@ Watt Window never switches anything itself. It only provides sensors, so your au
 - **Public holidays** for day/night tariffs that charge the night rate on holidays, from your country code.
 - **Solar (optional)** from the built-in [Forecast.Solar](https://www.home-assistant.io/integrations/forecast_solar/) integration. Your panels first cover your typical house load. Any spare output then covers the load you want to run, and that share costs only the export price you'd otherwise have earned. So a sunny midday can beat a cheap night, and it only does when it really is cheaper.
 
+When prices are flat for a while (common at night, or on a day/night tariff at weekends), several windows can start at the same time: ties go to the earliest start. The sidebar page then says how late you could start for the same price, and the `latest_same_price_start` attribute lets an automation use that.
+
 Once a window has started, it stays put. A price update mid-window will not move it.
 
 ## Install
@@ -20,7 +22,7 @@ Once a window has started, it stays put. A price update mid-window will not move
 1. In HACS, open the menu (⋮) → **Custom repositories**. Add `https://github.com/olig89/watt-window` with type **Integration**.
 2. Search HACS for **Watt Window** (the main list only shows what you've already downloaded), open it and download it. Restart Home Assistant.
 3. Make sure **Nord Pool** is set up (Settings → Devices & services → Add integration → Nord Pool). Set up **Forecast.Solar** too if you have panels.
-4. Add the **Watt Window** integration: price area and tariff preset, tariff details, your loads, then two questions you can skip: solar panels and home battery.
+4. Add the **Watt Window** integration: price area and tariff preset, tariff details, then two questions you can skip: solar panels and home battery.
 
 **Nord Pool is required** (it's where the prices come from). Solar and battery are optional and can be turned on or off later under **Configure**.
 
@@ -45,7 +47,7 @@ To change the tariff type (for example moving from a flat rate to day/night) or 
 | `sensor.watt_window_export_price_now` | What exporting a kWh earns now |
 | `sensor.watt_window_price_now_after_solar` | Cost of running your load now, after the solar forecast |
 | `sensor.watt_window_solar_forecast_now` | Forecast solar output now, W (only with solar) |
-| `sensor.watt_window_cheapest_<length>_window` | Start of the cheapest window of that length. Attributes: `end`, `average_price`, `average_import_price`, `solar_share`, `estimated_cost` |
+| `sensor.watt_window_cheapest_<length>_window` | Start of the cheapest window of that length. Attributes: `end`, `average_price`, `average_import_price`, `solar_share`, `estimated_cost`, `latest_same_price_start` |
 | `binary_sensor.watt_window_in_cheapest_<length>_window` | On while that window is running |
 
 `<length>` is written like `1_h`, `1_5_h` or `45_min`.

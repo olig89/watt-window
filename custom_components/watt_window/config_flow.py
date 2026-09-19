@@ -1,7 +1,8 @@
 """Setup and options screens.
 
-Setup:   area + preset + holiday country -> tariff details -> loads
-         -> solar? (pick Forecast.Solar / skip) -> battery? (yes / skip)
+Setup:   area + preset + holiday country -> tariff details
+         -> solar? (pick Forecast.Solar + house load / skip) -> battery? (yes / skip)
+The appliance wattage for cost estimates defaults to 1000 W and is edited on the sidebar page.
 Options: the same steps (prefilled), then window lengths.
 Nord Pool is required (it is the price source); solar and battery can be skipped.
 The sidebar page edits the same settings; both write the entry's options.
@@ -106,26 +107,23 @@ def _tariff_from_input(plan: str, user: dict) -> dict:
     return clean_tariff(t)
 
 
-def _loads_schema(s: dict) -> vol.Schema:
-    return vol.Schema(
-        {
-            vol.Required(CONF_BASE_LOAD_W, default=s.get(CONF_BASE_LOAD_W, DEFAULT_BASE_LOAD_W)): _watts(),
-            vol.Required(CONF_LOAD_W, default=s.get(CONF_LOAD_W, DEFAULT_LOAD_W)): _watts(),
-        }
-    )
-
-
 def _solar_schema(s: dict) -> vol.Schema:
     key = (
         vol.Required(CONF_SOLAR_ENTRY, default=s[CONF_SOLAR_ENTRY])
         if s.get(CONF_SOLAR_ENTRY)
         else vol.Required(CONF_SOLAR_ENTRY)
     )
-    return vol.Schema({key: ConfigEntrySelector(ConfigEntrySelectorConfig(integration=FORECAST_SOLAR_DOMAIN))})
+    return vol.Schema(
+        {
+            key: ConfigEntrySelector(ConfigEntrySelectorConfig(integration=FORECAST_SOLAR_DOMAIN)),
+            # Only matters with solar: the panels cover this first, the rest is spare.
+            vol.Required(CONF_BASE_LOAD_W, default=s.get(CONF_BASE_LOAD_W, DEFAULT_BASE_LOAD_W)): _watts(),
+        }
+    )
 
 
 class _SharedSteps:
-    """Steps both flows share: tariff, loads, and the yes/skip questions for solar and battery.
+    """Steps both flows share: tariff, and the yes/skip questions for solar and battery.
 
     Answers collect in ``self._store``; each flow finishes in its own ``_after_battery``.
     """
@@ -138,17 +136,10 @@ class _SharedSteps:
         if user_input is not None:
             try:
                 self._store[CONF_TARIFF] = _tariff_from_input(t["network_plan"], user_input)
-                return await self.async_step_loads()
+                return await self.async_step_solar_menu()
             except SettingsError as err:
                 errors["base"] = err.key
         return self.async_show_form(step_id="tariff", data_schema=_tariff_schema(t), errors=errors)
-
-    async def async_step_loads(self, user_input: dict | None = None) -> ConfigFlowResult:
-        if user_input is not None:
-            self._store[CONF_BASE_LOAD_W] = user_input[CONF_BASE_LOAD_W]
-            self._store[CONF_LOAD_W] = user_input[CONF_LOAD_W]
-            return await self.async_step_solar_menu()
-        return self.async_show_form(step_id="loads", data_schema=_loads_schema(self._store))
 
     async def async_step_solar_menu(self, user_input: dict | None = None) -> ConfigFlowResult:
         # Only offer "use solar" when there's a Forecast.Solar setup to pick.
@@ -166,6 +157,7 @@ class _SharedSteps:
     async def async_step_solar(self, user_input: dict | None = None) -> ConfigFlowResult:
         if user_input is not None:
             self._store[CONF_SOLAR_ENTRY] = user_input[CONF_SOLAR_ENTRY]
+            self._store[CONF_BASE_LOAD_W] = user_input[CONF_BASE_LOAD_W]
             return await self.async_step_battery_menu()
         return self.async_show_form(step_id="solar", data_schema=_solar_schema(self._store))
 
@@ -227,6 +219,8 @@ class WattWindowConfigFlow(_SharedSteps, ConfigFlow, domain=DOMAIN):
 
     async def _after_battery(self) -> ConfigFlowResult:
         self._store[CONF_WINDOWS] = list(DEFAULT_WINDOWS)
+        self._store.setdefault(CONF_BASE_LOAD_W, DEFAULT_BASE_LOAD_W)
+        self._store.setdefault(CONF_LOAD_W, DEFAULT_LOAD_W)
         return self.async_create_entry(title=NAME, data=self._store)
 
 
@@ -240,7 +234,7 @@ class WattWindowOptionsFlow(_SharedSteps, OptionsFlow):
             self._store = dict(self.config_entry.options)
             self._store[CONF_TARIFF] = current[CONF_TARIFF]
             self._store[CONF_WINDOWS] = current.get(CONF_WINDOWS) or list(DEFAULT_WINDOWS)
-            for key in (CONF_BASE_LOAD_W, CONF_LOAD_W, CONF_SOLAR_ENTRY):
+            for key in (CONF_BASE_LOAD_W, CONF_LOAD_W, CONF_SOLAR_ENTRY, CONF_HAS_BATTERY):
                 self._store.setdefault(key, current.get(key))
             if user_input[CONF_PRESET] != KEEP:
                 self._store[CONF_PRESET] = user_input[CONF_PRESET]
