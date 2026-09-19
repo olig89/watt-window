@@ -23,7 +23,7 @@ CONF_HAS_BATTERY = "has_battery"
 CONF_LOAD_W = "load_w"
 CONF_WINDOWS = "windows"  # list of window lengths in minutes
 
-DEFAULT_WINDOWS = [60, 120, 240, 360]
+DEFAULT_WINDOWS = [60, 120, 240]
 DEFAULT_BASE_LOAD_W = 500
 DEFAULT_LOAD_W = 1000
 DEFAULT_DAY_START = 8

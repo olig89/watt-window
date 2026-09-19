@@ -2,7 +2,7 @@
 
 Finds the cheapest hours to run things in Home Assistant, using Nord Pool spot prices, your own tariff, and an optional solar forecast. Set-up asks for as little as possible; you add detail later, when you have it.
 
-Each block of cheap hours it finds is a **Watt Window**. You choose the Watt Window lengths (1, 2, 4 and 6 hours by default, plus any lengths you add). For each one, Watt Window tells you when the cheapest block starts and gives you a sensor that is **on** while that block is running. Point your automations at those sensors to start the dishwasher, washing machine, heat pump boost, car or battery charging, and so on.
+Each block of cheap hours it finds is a **Watt Window**. You choose the Watt Window lengths (1, 2 and 4 hours by default, plus any lengths you add). For each one, Watt Window tells you when the cheapest block starts and gives you a sensor that is **on** while that block is running. Point your automations at those sensors to start the dishwasher, washing machine, heat pump boost, car or battery charging, and so on.
 
 Watt Window never switches anything itself. It only provides sensors, so your automations stay in charge.
 
@@ -44,7 +44,7 @@ HACS shows an update when a new release is published. Download it and restart Ho
 
 ## The sidebar page
 
-- **Overview:** the price now, each window with its start time, average price, solar share and estimated cost, and a chart of the next two days of prices with the solar forecast and your chosen window shaded.
+- **Overview:** the price now; a card per Watt Window length with its start time, its daytime (sun) and overnight (moon) versions, and details you can fold away; and a chart of every published price, with the solar forecast (which you can hide to see grid prices alone) and a lane per Watt Window underneath.
 - **Settings:** window lengths, your day hours, which Forecast.Solar setups to use, home battery, appliance watts, and your tariff rates. Changes apply straight away.
 
 To change the tariff type (for example moving from a flat rate to day/night) or the solar forecast, use **Settings → Devices & services → Watt Window → Configure**.

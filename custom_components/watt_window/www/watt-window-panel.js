@@ -23,12 +23,28 @@ const RATE_KEYS = {
 const PLAN_NAMES = { flat: "One rate", day_night: "Day / night", vork5: "Day / night / winter peaks (Võrk 5)" };
 // Must match manifest.json (a test checks). Compared with the running integration
 // so a tab still holding old page code after an update says so.
-const PANEL_VERSION = "0.8.2";
+const PANEL_VERSION = "0.9.0";
 
 const DIRECTIONS = [
   [0, "North"], [45, "North-east"], [90, "East"], [135, "South-east"],
   [180, "South"], [225, "South-west"], [270, "West"], [315, "North-west"],
 ];
+function loadPref(key, fallback) {
+  try {
+    const v = localStorage.getItem("watt-window:" + key);
+    return v === null ? fallback : JSON.parse(v);
+  } catch (e) {
+    return fallback;
+  }
+}
+function savePref(key, value) {
+  try {
+    localStorage.setItem("watt-window:" + key, JSON.stringify(value));
+  } catch (e) {
+    /* private window or storage blocked: the view just won't be remembered */
+  }
+}
+
 function compassName(deg) {
   const names = ["North", "North-east", "East", "South-east", "South", "South-west", "West", "North-west"];
   return "About " + names[Math.round((((Number(deg) % 360) + 360) % 360) / 45) % 8].toLowerCase();
@@ -47,6 +63,9 @@ class WattWindowPanel extends HTMLElement {
     this._error = null;
     this._draft = null;
     this._highlight = null;
+    this._focus = null; // a Watt Window length picked on the chart's lanes
+    this._showSolar = loadPref("showSolar", true);
+    this._expanded = new Set(loadPref("expanded", []));
     this._saving = false;
     this._notice = null;
   }
@@ -171,11 +190,11 @@ class WattWindowPanel extends HTMLElement {
       <div class="card">
         ${this._chart(d)}
         <div class="legend">
-          <span><i class="sw bar"></i>What a ${esc(d.settings.load_w)} W load costs each quarter-hour${d.solar.configured ? " (after solar)" : ""}</span>
-          ${d.solar.configured ? `<span><i class="sw sun"></i>Solar forecast</span>` : ""}
-          <span><i class="sw band" style="background:${WINDOW_COLOURS[Math.max(0, d.windows.findIndex((w) => w.minutes === this._highlight)) % WINDOW_COLOURS.length]}"></i>Highlighted Watt Window:
-            <select id="hl">${d.windows.map((w) => `<option value="${w.minutes}" ${w.minutes === this._highlight ? "selected" : ""}>${esc(w.label)}</option>`).join("")}</select></span>
+          <span><i class="sw bar"></i>What a ${esc(d.settings.load_w)} W load costs each quarter-hour${d.solar.configured ? (this._showSolar ? " (after solar)" : " (grid only, as if you had no solar)") : ""}</span>
+          ${d.solar.configured && this._showSolar ? `<span><i class="sw sun"></i>Solar forecast</span>` : ""}
+          ${d.solar.configured ? `<label class="check toggle"><input type="checkbox" id="showsolar" ${this._showSolar ? "checked" : ""}> Show solar</label>` : ""}
         </div>
+        <p class="explain lanes-note">The coloured lanes under the chart are your Watt Windows, one lane per length. A paler tail means you could start later for the same price. Tap a lane to shade that Watt Window on the chart.</p>
         <p class="explain"><b>Why the chart stops where it does:</b> ${esc(d.price_source)} sets tomorrow's prices once a day, at an auction that closes at noon Central European time; they're published about 45 minutes later${d.next_prices_at ? ` (${this._when(d.next_prices_at)} your time)` : ""}. Before that, nobody knows prices beyond midnight CET, so the furthest anyone can see is roughly a day and a half, and some mornings less than a day.</p>
         ${d.solar.credit ? `<p class="explain credit">Solar estimate: ${esc(d.solar.credit)}.</p>` : ""}
         <p class="explain">Each bar is the price of one quarter-hour: ${esc(d.price_source)} spot plus your network rate, fees and VAT.
@@ -207,37 +226,61 @@ class WattWindowPanel extends HTMLElement {
       ? `<span class="chip">Now</span> until ${this._time(w.end)}`
       : `${this._dayWord(w.start)} ${this._time(w.start)}–${this._time(w.end)}`;
     const saving = nowQ && nowQ.import > 0 ? Math.round((1 - w.average_price / nowQ.import) * 100) : null;
+    const open = this._expanded.has(w.minutes);
     return `<div class="card win" style="--c:${colour}">
-      <div class="wl">${esc(w.label)}</div>
+      <div class="head">
+        <div class="wl">${esc(w.label)}</div>
+        <button class="more" data-more="${w.minutes}" aria-expanded="${open}" aria-label="${open ? "Hide" : "Show"} details for ${esc(w.label)}" title="${open ? "Hide" : "Show"} details">
+          <ha-icon icon="mdi:chevron-down" class="${open ? "flip" : ""}"></ha-icon>
+        </button>
+      </div>
       <div class="when">${when}</div>
       ${!w.active && w.latest_start && w.latest_start !== w.start
         ? `<div class="s flex">Same price if you start any time up to ${this._time(w.latest_start)}</div>` : ""}
-      <div class="s muted">Cheapest in the prices known so far</div>
-      <div class="s">${this._price(w.average_price)} on average${w.solar_share > 0 ? ` · ${Math.round(w.solar_share * 100)}% solar` : ""}</div>
-      <div class="s">≈ ${this._money(w.cost)} to run ${esc(this._data.settings.load_w)} W${saving != null && saving > 0 && !w.active ? ` · ${saving}% below the price now` : ""}</div>
+      ${open ? `<div class="details">
+        <div class="s muted">Cheapest in the prices known so far</div>
+        <div class="s">${this._price(w.average_price)} on average${w.solar_share > 0 ? ` · ${Math.round(w.solar_share * 100)}% solar` : ""}</div>
+        <div class="s">≈ ${this._money(w.cost)} to run ${esc(this._data.settings.load_w)} W${saving != null && saving > 0 && !w.active ? ` · ${saving}% below the price now` : ""}</div>
+      </div>` : ""}
       <div class="split">
-        ${this._periodLine("Daytime", w.day)}
-        ${this._periodLine("Overnight", w.night)}
+        ${this._periodLine("day", w.day)}
+        ${this._periodLine("night", w.night)}
       </div>
     </div>`;
   }
 
-  _periodLine(name, p) {
-    if (!p) return `<div class="s"><b>${name}:</b> not enough prices yet</div>`;
-    const when = p.active ? `now until ${this._time(p.end)}` : `${this._dayWord(p.start)} ${this._time(p.start)}–${this._time(p.end)}`;
-    const note = p.settled || p.active ? "" : ` <span class="muted">· may change when the next prices arrive</span>`;
-    return `<div class="s"><b>${name}:</b> ${when} · ${this._price(p.average_price)}${note}</div>`;
+  _periodLine(kind, p) {
+    const icon = kind === "day" ? "mdi:weather-sunny" : "mdi:weather-night";
+    const name = kind === "day" ? "Daytime" : "Overnight";
+    const head = `<ha-icon icon="${icon}" class="pi" title="${name}"></ha-icon><span class="sr">${name}:</span>`;
+    if (!p) return `<div class="period" title="${name}">${head}<span class="s">no prices yet</span></div>`;
+    const when = p.active ? `now–${this._time(p.end)}` : `${this._shortDay(p.start)} ${this._time(p.start)}–${this._time(p.end)}`;
+    const unsettled = p.settled || p.active ? "" : `<span class="warn-dot" title="May change when the next prices arrive">*</span>`;
+    return `<div class="period" title="${name}: ${this._when(p.start)}, ${this._price(p.average_price)}${p.settled || p.active ? "" : " (may change when the next prices arrive)"}">
+      ${head}<span class="pt">${when}${unsettled}</span><span class="s">${this._price(p.average_price)}</span></div>`;
+  }
+
+  _shortDay(iso) {
+    const w = this._dayWord(iso);
+    return w === "Today" ? "" : w === "Tomorrow" ? "Tmrw" : w.slice(0, 3);
   }
 
   _chart(d) {
     const qs = d.quarters;
     if (!qs.length) return `<div class="s">No prices yet.</div>`;
-    const W = 1000, H = 260, top = 12, bottom = 40, left = 44, right = d.solar.configured ? 44 : 12;
-    const plotW = W - left - right, plotH = H - top - bottom;
+    const showSolar = d.solar.configured && this._showSolar;
+    const price = (q) => (showSolar ? q.effective : q.import);
+    const lanes = d.windows.filter((w) => w.start);
+    const LANE_H = 14, LANE_GAP = 6;
+    const W = 1000, top = 12, axisH = 40, left = 44, right = showSolar ? 44 : 12;
+    const plotH = 208;
+    const lanesTop = top + plotH + axisH;
+    const H = lanesTop + lanes.length * (LANE_H + LANE_GAP) + 6;
+    const plotW = W - left - right;
     const t0 = new Date(qs[0].start).getTime();
     const t1 = new Date(qs[qs.length - 1].start).getTime() + 900000;
-    const x = (t) => left + ((t - t0) / (t1 - t0)) * plotW;
-    const vals = qs.map((q) => q.effective);
+    const x = (t) => left + ((Math.min(Math.max(t, t0), t1) - t0) / (t1 - t0)) * plotW;
+    const vals = qs.map(price);
     const maxP = Math.max(0.01, ...vals, ...qs.map((q) => q.import));
     const minP = Math.min(0, ...vals);
     const y = (p) => top + plotH - ((p - minP) / (maxP - minP)) * plotH;
@@ -245,16 +288,16 @@ class WattWindowPanel extends HTMLElement {
     const ys = (w) => top + plotH - (w / maxS) * plotH;
     const bw = Math.max(1, plotW / qs.length - 0.5);
     const now = new Date(d.now).getTime();
+    const colourOf = (w) => WINDOW_COLOURS[d.windows.indexOf(w) % WINDOW_COLOURS.length];
     let svg = "";
 
-    // highlighted window band
-    const hw = d.windows.find((w) => w.minutes === this._highlight);
-    if (hw && hw.start) {
-      const i = d.windows.indexOf(hw);
-      svg += `<rect x="${x(new Date(hw.start).getTime())}" y="${top}" width="${x(new Date(hw.end).getTime()) - x(new Date(hw.start).getTime())}" height="${plotH}" fill="${WINDOW_COLOURS[i % WINDOW_COLOURS.length]}" opacity="0.14"/>`;
+    // the Watt Window picked on a lane, shaded across the plot
+    const fw = lanes.find((w) => w.minutes === this._focus);
+    if (fw) {
+      const a = new Date(fw.start).getTime(), b = new Date(fw.end).getTime();
+      svg += `<rect x="${x(a)}" y="${top}" width="${x(b) - x(a)}" height="${plotH}" fill="${colourOf(fw)}" opacity="0.16"/>`;
     }
-    // solar area
-    if (d.solar.configured) {
+    if (showSolar) {
       let path = `M ${x(t0)} ${ys(0)}`;
       qs.forEach((q) => {
         const t = new Date(q.start).getTime();
@@ -263,45 +306,74 @@ class WattWindowPanel extends HTMLElement {
       path += ` L ${x(t1)} ${ys(0)} Z`;
       svg += `<path d="${path}" fill="#fbc02d" opacity="0.28"/>`;
     }
-    // price bars
     qs.forEach((q) => {
       const t = new Date(q.start).getTime();
       const past = t + 900000 <= now;
-      const y0 = y(Math.max(0, minP)), y1 = y(q.effective);
-      const covered = q.effective < q.import - 1e-9;
+      const y0 = y(Math.max(0, minP)), y1 = y(price(q));
+      const covered = showSolar && q.effective < q.import - 1e-9;
       svg += `<rect x="${x(t)}" y="${Math.min(y0, y1)}" width="${bw}" height="${Math.max(0.5, Math.abs(y1 - y0))}" fill="${covered ? "#43a047" : "var(--primary-color)"}" opacity="${past ? 0.3 : 0.85}"/>`;
     });
-    // gridlines + price axis
     for (let k = 0; k <= 4; k++) {
       const p = minP + ((maxP - minP) * k) / 4;
       svg += `<line x1="${left}" x2="${W - right}" y1="${y(p)}" y2="${y(p)}" stroke="var(--divider-color)" stroke-width="0.6"/>`;
       svg += `<text x="${left - 5}" y="${y(p) + 4}" text-anchor="end" class="ax">${d.currency === "EUR" ? (p * 100).toFixed(0) + "c" : p.toFixed(2)}</text>`;
     }
-    if (d.solar.configured) {
-      svg += `<text x="${W - right + 5}" y="${top + 8}" class="ax">${(maxS / 1000).toFixed(1)} kW</text>`;
-    }
-    // hour labels every 3 h, midnight lines
+    if (showSolar) svg += `<text x="${W - right + 5}" y="${top + 8}" class="ax">${(maxS / 1000).toFixed(1)} kW</text>`;
     for (let t = t0; t <= t1; t += 900000) {
       const parts = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: this._tz }).format(new Date(t));
       const [hh, mm] = parts.split(":").map(Number);
       if (mm !== 0) continue;
       if (hh === 0) {
-        svg += `<line x1="${x(t)}" x2="${x(t)}" y1="${top}" y2="${top + plotH}" stroke="var(--secondary-text-color)" stroke-width="0.8" stroke-dasharray="3 3"/>`;
-        svg += `<text x="${x(t) + 4}" y="${H - 6}" class="ax day">${this._dayWord(new Date(t).toISOString())}</text>`;
+        svg += `<line x1="${x(t)}" x2="${x(t)}" y1="${top}" y2="${H - 4}" stroke="var(--secondary-text-color)" stroke-width="0.8" stroke-dasharray="3 3"/>`;
+        svg += `<text x="${x(t) + 4}" y="${top + plotH + 32}" class="ax day">${this._dayWord(new Date(t).toISOString())}</text>`;
       }
       if (hh % 3 === 0) svg += `<text x="${x(t)}" y="${top + plotH + 16}" text-anchor="middle" class="ax">${String(hh).padStart(2, "0")}</text>`;
     }
-    // now line
+    // one lane per Watt Window length: the window, plus a paler tail for later starts at the same price
+    lanes.forEach((w, i) => {
+      const ly = lanesTop + i * (LANE_H + LANE_GAP);
+      const c = colourOf(w);
+      const a = new Date(w.start).getTime(), b = new Date(w.end).getTime();
+      const dur = b - a;
+      const late = w.latest_start ? new Date(w.latest_start).getTime() + dur : b;
+      const on = this._focus === w.minutes;
+      svg += `<g class="lane" data-lane="${w.minutes}" tabindex="0" role="button" aria-pressed="${on}" aria-label="${esc(w.label)} Watt Window, ${esc(this._when(w.start))} to ${esc(this._time(w.end))}">`;
+      svg += `<rect x="${left}" y="${ly}" width="${plotW}" height="${LANE_H}" fill="var(--secondary-background-color, #eee)" opacity="0.5" rx="3"/>`;
+      if (late > b) svg += `<rect x="${x(b)}" y="${ly}" width="${x(late) - x(b)}" height="${LANE_H}" fill="${c}" opacity="0.3" rx="3"/>`;
+      svg += `<rect x="${x(a)}" y="${ly}" width="${Math.max(3, x(b) - x(a))}" height="${LANE_H}" fill="${c}" rx="3" ${on ? `stroke="var(--primary-text-color)" stroke-width="1.5"` : ""}/>`;
+      svg += `<text x="${left - 5}" y="${ly + LANE_H - 3}" text-anchor="end" class="ax lane-label" fill="${c}">${esc(w.label)}</text>`;
+      svg += `</g>`;
+    });
     if (now >= t0 && now <= t1) {
-      svg += `<line x1="${x(now)}" x2="${x(now)}" y1="${top}" y2="${top + plotH}" stroke="#e53935" stroke-width="1.5"/>`;
+      svg += `<line x1="${x(now)}" x2="${x(now)}" y1="${top}" y2="${H - 4}" stroke="#e53935" stroke-width="1.5"/>`;
       svg += `<text x="${x(now) + 4}" y="${top + 10}" class="ax now">now</text>`;
     }
-    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Electricity price and solar forecast for every quarter-hour with a published price">${svg}</svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Electricity price${showSolar ? " and solar forecast" : ""} for every quarter-hour with a published price, with a lane per Watt Window">${svg}</svg>`;
   }
 
   _bindOverview() {
-    const hl = this.shadowRoot.getElementById("hl");
-    if (hl) hl.addEventListener("change", () => { this._highlight = Number(hl.value); this._render(); });
+    const r = this.shadowRoot;
+    r.querySelectorAll("[data-more]").forEach((b) => b.addEventListener("click", () => {
+      const m = Number(b.dataset.more);
+      if (this._expanded.has(m)) this._expanded.delete(m); else this._expanded.add(m);
+      savePref("expanded", [...this._expanded]);
+      this._render();
+    }));
+    const solar = r.getElementById("showsolar");
+    if (solar) solar.addEventListener("change", () => {
+      this._showSolar = solar.checked;
+      savePref("showSolar", this._showSolar);
+      this._render();
+    });
+    const pick = (el) => {
+      const m = Number(el.dataset.lane);
+      this._focus = this._focus === m ? null : m;
+      this._render();
+    };
+    r.querySelectorAll("[data-lane]").forEach((g) => {
+      g.addEventListener("click", () => pick(g));
+      g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(g); } });
+    });
   }
 
   // ---------- settings ----------
@@ -529,7 +601,8 @@ const STYLES = `
   .s { font-size:13px; color: var(--secondary-text-color); margin-top:2px; }
   .meta { font-size:12px; color: var(--secondary-text-color); margin-top:12px; }
   .bad { color: var(--error-color); }
-  .windows { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
+  .windows { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:12px; }
+  @media (max-width: 720px) { .windows { grid-template-columns: 1fr; } }
   .windows .card { margin:0; border-left:4px solid var(--c); }
   .wl { font-size:13px; font-weight:500; color: var(--c); text-transform:uppercase; letter-spacing:.04em; }
   .when { font-size:18px; font-weight:500; margin:4px 0; }
@@ -540,6 +613,24 @@ const STYLES = `
   .btn.small { padding:6px 12px; font-size:13px; }
   .radios { display:flex; flex-wrap:wrap; gap:6px 18px; margin:4px 0 8px; }
   .credit { font-size:12px; }
+  .head { display:flex; align-items:center; justify-content:space-between; }
+  .more { background:none; border:none; padding:2px; margin:-4px -4px -4px 0; cursor:pointer; color: var(--secondary-text-color); border-radius:50%; width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; }
+  .more:hover { background: var(--secondary-background-color); }
+  .more ha-icon { transition: transform .2s; --mdc-icon-size: 22px; }
+  .more ha-icon.flip { transform: rotate(180deg); }
+  .details { margin: 4px 0; }
+  .split { display:grid; grid-template-columns: 1fr 1fr; gap:6px 10px; }
+  .period { display:flex; flex-wrap:wrap; align-items:center; gap:2px 6px; font-size:13px; min-width:0; }
+  .period .pi { --mdc-icon-size: 18px; color: var(--secondary-text-color); }
+  .period .pt { font-weight:500; }
+  .warn-dot { color: var(--warning-color, #f57c00); margin-left:1px; }
+  .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+  .lane { cursor:pointer; }
+  .lane:focus { outline: none; }
+  .lane:focus rect:nth-of-type(1) { stroke: var(--primary-color); stroke-width: 1; }
+  .lane-label { font-weight:600; }
+  .toggle { flex-direction:row; }
+  .lanes-note { margin-top:6px; }
   .split { border-top:1px solid var(--divider-color); margin-top:8px; padding-top:6px; }
   .chip { display:inline-flex; align-items:center; gap:4px; background: var(--c, var(--primary-color)); color:#fff; border-radius:10px; padding:1px 8px; font-size:12px; }
   .chip.big { background: var(--secondary-background-color); color: var(--primary-text-color); font-size:14px; padding:4px 4px 4px 10px; }

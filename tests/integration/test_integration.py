@@ -70,7 +70,7 @@ async def test_config_flow_creates_entry(hass, tallinn, nordpool):
     data = result["data"]
     assert data["country"] == "EE"
     assert data["tariff"]["vat"] == pytest.approx(0.24)
-    assert data["windows"] == [60, 120, 240, 360]
+    assert data["windows"] == [60, 120, 240]
     assert data["has_battery"] is False
     assert data["solar_source"] == "none"
     assert data["load_w"] == 1000 and data["base_load_w"] == 500  # defaults, never asked
