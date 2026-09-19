@@ -1,0 +1,132 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Watt Window",
+        "description": "Finds the cheapest time to use electricity, using Nord Pool prices, your tariff and (optionally) a Forecast.Solar forecast.",
+        "data": {
+          "area": "Nord Pool price area",
+          "preset": "Tariff",
+          "country": "Country for public holidays"
+        },
+        "data_description": {
+          "preset": "A starting point. You can adjust every rate on the next screen.",
+          "country": "Two-letter code, e.g. EE, GB. Holidays count as night on day/night tariffs. Leave empty to ignore holidays."
+        }
+      },
+      "tariff": {
+        "title": "Your tariff",
+        "description": "All rates per kWh, before VAT, in your Nord Pool currency.",
+        "data": {
+          "rate_flat": "Network rate",
+          "rate_day": "Network rate, day",
+          "rate_night": "Network rate, night",
+          "rate_weekday_peak": "Network rate, weekday peak (Nov-Mar)",
+          "rate_weekend_peak": "Network rate, weekend peak (Nov-Mar)",
+          "day_start": "Day rate starts (hour)",
+          "day_end": "Day rate ends (hour)",
+          "weekends_night": "Weekends are night rate",
+          "holidays_night": "Public holidays are night rate",
+          "vat_percent": "VAT",
+          "margin": "Supplier margin on top of spot",
+          "other_per_kwh": "Other per-kWh charges",
+          "export_fee": "Fee deducted from exported energy"
+        },
+        "data_description": {
+          "other_per_kwh": "Taxes and fees charged per kWh, e.g. renewable fee, excise, balancing charge."
+        }
+      },
+      "solar": {
+        "title": "Solar and your loads",
+        "description": "Optional: pick your Forecast.Solar setup so windows prefer times when your panels will cover the load.",
+        "data": {
+          "solar_entry_id": "Forecast.Solar",
+          "base_load_w": "Typical house load",
+          "load_w": "Power of the things you'll run in a window"
+        },
+        "data_description": {
+          "base_load_w": "Solar goes to the house first; only what's left over counts as free-ish.",
+          "load_w": "e.g. about 1000 W for a dishwasher, 2000 W for a washing machine heating water."
+        }
+      }
+    },
+    "abort": {
+      "no_nordpool": "Set up the Nord Pool integration first (Settings > Devices & services > Add integration > Nord Pool).",
+      "single_instance_allowed": "Watt Window is already set up."
+    },
+    "error": {
+      "bad_plan": "Unknown tariff type.",
+      "bad_rate": "Every network rate needs a number.",
+      "bad_hours": "The day rate must start before it ends, between 0 and 24.",
+      "bad_vat": "VAT must be between 0 and 99 %."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Watt Window settings",
+        "data": {
+          "preset": "Tariff",
+          "country": "Country for public holidays"
+        },
+        "data_description": {
+          "preset": "Keep your current rates, or start again from a preset."
+        }
+      },
+      "tariff": {
+        "title": "Your tariff",
+        "description": "All rates per kWh, before VAT, in your Nord Pool currency.",
+        "data": {
+          "rate_flat": "Network rate",
+          "rate_day": "Network rate, day",
+          "rate_night": "Network rate, night",
+          "rate_weekday_peak": "Network rate, weekday peak (Nov-Mar)",
+          "rate_weekend_peak": "Network rate, weekend peak (Nov-Mar)",
+          "day_start": "Day rate starts (hour)",
+          "day_end": "Day rate ends (hour)",
+          "weekends_night": "Weekends are night rate",
+          "holidays_night": "Public holidays are night rate",
+          "vat_percent": "VAT",
+          "margin": "Supplier margin on top of spot",
+          "other_per_kwh": "Other per-kWh charges",
+          "export_fee": "Fee deducted from exported energy"
+        }
+      },
+      "solar": {
+        "title": "Solar and your loads",
+        "data": {
+          "solar_entry_id": "Forecast.Solar",
+          "base_load_w": "Typical house load",
+          "load_w": "Power of the things you'll run in a window"
+        }
+      },
+      "windows": {
+        "title": "Window lengths",
+        "description": "Comma-separated, in hours, in steps of a quarter-hour. Each length gets its own sensors.",
+        "data": {
+          "hours": "Window lengths (hours)"
+        }
+      }
+    },
+    "error": {
+      "bad_plan": "Unknown tariff type.",
+      "bad_rate": "Every network rate needs a number.",
+      "bad_hours": "The day rate must start before it ends, between 0 and 24.",
+      "bad_vat": "VAT must be between 0 and 99 %.",
+      "no_windows": "Add at least one window length.",
+      "bad_window": "Window lengths must be between 0.25 and 24 hours, in quarter-hour steps."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "import_price": { "name": "Price now" },
+      "export_price": { "name": "Export price now" },
+      "effective_price": { "name": "Price now after solar" },
+      "solar_forecast": { "name": "Solar forecast now" },
+      "window_start": { "name": "Cheapest {length} window" }
+    },
+    "binary_sensor": {
+      "in_window": { "name": "In cheapest {length} window" }
+    }
+  }
+}

@@ -1,0 +1,43 @@
+"""Binary sensors: are we inside the cheapest window of this length right now?"""
+
+from __future__ import annotations
+
+from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from .const import window_label
+from .coordinator import WattWindowCoordinator
+from .sensor import device_info
+
+
+async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddConfigEntryEntitiesCallback) -> None:
+    coord: WattWindowCoordinator = entry.runtime_data
+    async_add_entities(InWindowSensor(coord, m) for m in sorted(coord.data.windows))
+
+
+class InWindowSensor(CoordinatorEntity[WattWindowCoordinator], BinarySensorEntity):
+    _attr_has_entity_name = True
+    _attr_translation_key = "in_window"
+
+    def __init__(self, coord: WattWindowCoordinator, minutes: int) -> None:
+        super().__init__(coord)
+        self._minutes = minutes
+        self._attr_unique_id = f"{coord.config_entry.entry_id}_window_{minutes}_active"
+        self._attr_device_info = device_info(coord.config_entry.entry_id)
+        self._attr_translation_placeholders = {"length": window_label(minutes)}
+
+    @property
+    def is_on(self) -> bool:
+        w = self.coordinator.data.windows.get(self._minutes)
+        return bool(w and w.contains(self.coordinator.data.now))
+
+    @property
+    def extra_state_attributes(self):
+        w = self.coordinator.data.windows.get(self._minutes)
+        return {
+            "window_minutes": self._minutes,
+            "start": w.start.isoformat() if w else None,
+            "end": w.end.isoformat() if w else None,
+        }

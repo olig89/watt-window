@@ -1,0 +1,15 @@
+{
+  "domain": "watt_window",
+  "name": "Watt Window",
+  "after_dependencies": ["forecast_solar", "frontend", "nordpool", "panel_custom"],
+  "codeowners": ["@olig89"],
+  "config_flow": true,
+  "dependencies": ["http", "websocket_api"],
+  "documentation": "https://github.com/olig89/watt-window",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/olig89/watt-window/issues",
+  "requirements": ["holidays>=0.50"],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}
