@@ -67,7 +67,7 @@ async def test_config_flow_creates_entry(hass, tallinn, nordpool):
     assert data["tariff"]["vat"] == pytest.approx(0.24)
     assert data["windows"] == [60, 120, 240, 360]
     assert data["has_battery"] is False
-    assert data["solar_entry_id"] is None
+    assert data["solar_entry_ids"] == []
     assert data["load_w"] == 1000 and data["base_load_w"] == 500  # defaults, never asked
 
 
@@ -250,10 +250,10 @@ async def test_config_flow_with_solar_and_battery(hass, tallinn, nordpool, forec
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "solar"})
     assert result["step_id"] == "solar"
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"solar_entry_id": forecast_solar.entry_id, "base_load_w": 300})
+        result["flow_id"], {"solar_entry_ids": [forecast_solar.entry_id], "base_load_w": 300})
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "battery"})
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["data"]["solar_entry_id"] == forecast_solar.entry_id
+    assert result["data"]["solar_entry_ids"] == [forecast_solar.entry_id]
     assert result["data"]["has_battery"] is True
     assert result["data"]["base_load_w"] == 300
 
@@ -274,5 +274,76 @@ async def test_options_flow_can_turn_solar_off(hass, tallinn, nordpool, forecast
     result = await hass.config_entries.options.async_configure(result["flow_id"], {"hours": "1, 2"})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
-    assert entry.options["solar_entry_id"] is None
+    assert entry.options["solar_entry_ids"] == []
     assert hass.states.get("sensor.watt_window_solar_forecast_now") is None
+
+
+@pytest.mark.freeze_time("2026-09-21 12:00:00+00:00")  # Monday 15:00 Tallinn
+async def test_daytime_and_overnight_windows(hass, tallinn, nordpool):
+    await setup(hass)
+    # Cheap block is 02:00-04:00 UTC = 05:00-07:00 Tallinn: overnight (20:00-08:00).
+    night = hass.states.get("sensor.watt_window_cheapest_overnight_2_h_window")
+    assert night.state == "2026-09-22T02:00:00+00:00"
+    assert night.attributes["period_start"].startswith("2026-09-21T20:00:00+03:00")
+    assert night.attributes["period_end"].startswith("2026-09-22T08:00:00+03:00")
+    # The rest of today's day (15:00-20:00) is flat 100 and fits 2 h: first start wins.
+    day = hass.states.get("sensor.watt_window_cheapest_daytime_2_h_window")
+    assert day.state == "2026-09-21T12:00:00+00:00"
+    assert day.attributes["period_end"].startswith("2026-09-21T20:00:00+03:00")
+    # 6 h no longer fits in today's daytime: it moves to tomorrow's.
+    day6 = hass.states.get("sensor.watt_window_cheapest_daytime_6_h_window")
+    assert day6 is None  # 6 h isn't one of this entry's lengths
+    assert hass.states.get("binary_sensor.watt_window_in_cheapest_daytime_2_h_window").state == "on"
+    assert hass.states.get("binary_sensor.watt_window_in_cheapest_overnight_2_h_window").state == "off"
+
+
+@pytest.mark.freeze_time("2026-09-21 12:00:00+00:00")
+async def test_daytime_window_moves_to_tomorrow_when_today_is_too_short(hass, tallinn, nordpool):
+    await setup(hass, windows=[360])
+    day = hass.states.get("sensor.watt_window_cheapest_daytime_6_h_window")
+    assert day.attributes["period_start"].startswith("2026-09-22T08:00:00+03:00")
+
+
+@pytest.mark.freeze_time("2026-09-21 12:00:00+00:00")
+async def test_two_solar_forecasts_are_added_up(hass, tallinn, nordpool, forecast_solar):
+    second = MockConfigEntry(domain="forecast_solar", title="West roof", data={})
+    second.add_to_hass(hass)
+    await setup(hass, solar_entry_ids=[forecast_solar.entry_id, second.entry_id])
+    ws_state = hass.states.get("sensor.watt_window_solar_forecast_now")
+    assert ws_state is not None
+    coord = hass.config_entries.async_entries("watt_window")[0].runtime_data
+    q = next(q for q in coord.data.quarters if q.solar_w)
+    assert q.solar_w == 8000  # 4 kW from each fake forecast
+
+
+@pytest.mark.freeze_time("2026-09-21 12:00:00+00:00")
+async def test_old_single_solar_setting_still_works(hass, tallinn, nordpool, forecast_solar):
+    await setup(hass, solar_entry_id=forecast_solar.entry_id)
+    assert hass.states.get("sensor.watt_window_solar_forecast_now") is not None
+
+
+@pytest.mark.freeze_time("2026-09-21 12:00:00+00:00")
+async def test_panel_saves_solar_and_day_hours(hass, tallinn, nordpool, forecast_solar, hass_ws_client):
+    entry = await setup(hass)
+    ws = await hass_ws_client(hass)
+    await ws.send_json({"id": 1, "type": "watt_window/data"})
+    msg = await ws.receive_json()
+    settings = msg["result"]["settings"]
+    assert settings["solar_entry_ids"] == [] and settings["day_start"] == 8 and settings["day_end"] == 20
+    assert [o["entry_id"] for o in settings["solar_options"]] == [forecast_solar.entry_id]
+
+    await ws.send_json({"id": 2, "type": "watt_window/save", "solar_entry_ids": [forecast_solar.entry_id],
+                        "day_start": 7, "day_end": 21})
+    msg = await ws.receive_json()
+    assert msg["success"], msg
+    await hass.async_block_till_done()
+    assert entry.options["solar_entry_ids"] == [forecast_solar.entry_id]
+    assert (entry.options["day_window_start"], entry.options["day_window_end"]) == (7, 21)
+    assert hass.states.get("sensor.watt_window_solar_forecast_now") is not None
+
+    await ws.send_json({"id": 3, "type": "watt_window/save", "solar_entry_ids": ["nope"]})
+    msg = await ws.receive_json()
+    assert not msg["success"] and msg["error"]["code"] == "bad_solar"
+    await ws.send_json({"id": 4, "type": "watt_window/save", "day_start": 20, "day_end": 8})
+    msg = await ws.receive_json()
+    assert not msg["success"] and msg["error"]["code"] == "bad_day_hours"

@@ -18,8 +18,6 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResu
 from homeassistant.core import callback
 from homeassistant.helpers.selector import (
     BooleanSelector,
-    ConfigEntrySelector,
-    ConfigEntrySelectorConfig,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -37,7 +35,7 @@ from .const import (
     CONF_HAS_BATTERY,
     CONF_LOAD_W,
     CONF_PRESET,
-    CONF_SOLAR_ENTRY,
+    CONF_SOLAR_ENTRIES,
     CONF_TARIFF,
     CONF_WINDOWS,
     DEFAULT_BASE_LOAD_W,
@@ -48,6 +46,8 @@ from .const import (
     NAME,
     NORDPOOL_DOMAIN,
     settings_of,
+    solar_entry_ids,
+    solar_entry_label,
 )
 from .core.presets import PRESETS, tariff_from_preset
 from .core.tariff import rate_keys
@@ -107,15 +107,17 @@ def _tariff_from_input(plan: str, user: dict) -> dict:
     return clean_tariff(t)
 
 
-def _solar_schema(s: dict) -> vol.Schema:
-    key = (
-        vol.Required(CONF_SOLAR_ENTRY, default=s[CONF_SOLAR_ENTRY])
-        if s.get(CONF_SOLAR_ENTRY)
-        else vol.Required(CONF_SOLAR_ENTRY)
-    )
+def _solar_schema(hass, s: dict) -> vol.Schema:
+    options = [
+        SelectOptionDict(value=e.entry_id, label=solar_entry_label(e))
+        for e in hass.config_entries.async_entries(FORECAST_SOLAR_DOMAIN)
+    ]
+    chosen = solar_entry_ids(s) or [o["value"] for o in options]
     return vol.Schema(
         {
-            key: ConfigEntrySelector(ConfigEntrySelectorConfig(integration=FORECAST_SOLAR_DOMAIN)),
+            vol.Required(CONF_SOLAR_ENTRIES, default=chosen): SelectSelector(
+                SelectSelectorConfig(options=options, multiple=True, mode=SelectSelectorMode.LIST)
+            ),
             # Only matters with solar: the panels cover this first, the rest is spare.
             vol.Required(CONF_BASE_LOAD_W, default=s.get(CONF_BASE_LOAD_W, DEFAULT_BASE_LOAD_W)): _watts(),
         }
@@ -149,20 +151,20 @@ class _SharedSteps:
             menu_options=["solar", "skip_solar"] if has_forecast else ["skip_solar"],
             description_placeholders={
                 "note": "" if has_forecast else
-                "\n\nNo Forecast.Solar setup was found. Add one under Settings > Devices & services, "
-                "then turn solar on later from Watt Window's Configure."
+                "\n\n**No Forecast.Solar setup found.** [Add Forecast.Solar](/config/integrations/dashboard/add?domain=forecast_solar) "
+                "(once per roof plane, it's free), then turn solar on from Watt Window's Settings tab. Skip for now."
             },
         )
 
     async def async_step_solar(self, user_input: dict | None = None) -> ConfigFlowResult:
         if user_input is not None:
-            self._store[CONF_SOLAR_ENTRY] = user_input[CONF_SOLAR_ENTRY]
+            self._store[CONF_SOLAR_ENTRIES] = list(user_input[CONF_SOLAR_ENTRIES])
             self._store[CONF_BASE_LOAD_W] = user_input[CONF_BASE_LOAD_W]
             return await self.async_step_battery_menu()
-        return self.async_show_form(step_id="solar", data_schema=_solar_schema(self._store))
+        return self.async_show_form(step_id="solar", data_schema=_solar_schema(self.hass, self._store))
 
     async def async_step_skip_solar(self, user_input: dict | None = None) -> ConfigFlowResult:
-        self._store[CONF_SOLAR_ENTRY] = None
+        self._store[CONF_SOLAR_ENTRIES] = []
         return await self.async_step_battery_menu()
 
     async def async_step_battery_menu(self, user_input: dict | None = None) -> ConfigFlowResult:
@@ -234,8 +236,9 @@ class WattWindowOptionsFlow(_SharedSteps, OptionsFlow):
             self._store = dict(self.config_entry.options)
             self._store[CONF_TARIFF] = current[CONF_TARIFF]
             self._store[CONF_WINDOWS] = current.get(CONF_WINDOWS) or list(DEFAULT_WINDOWS)
-            for key in (CONF_BASE_LOAD_W, CONF_LOAD_W, CONF_SOLAR_ENTRY, CONF_HAS_BATTERY):
+            for key in (CONF_BASE_LOAD_W, CONF_LOAD_W, CONF_HAS_BATTERY):
                 self._store.setdefault(key, current.get(key))
+            self._store[CONF_SOLAR_ENTRIES] = solar_entry_ids(current)
             if user_input[CONF_PRESET] != KEEP:
                 self._store[CONF_PRESET] = user_input[CONF_PRESET]
                 self._store[CONF_TARIFF] = tariff_from_preset(user_input[CONF_PRESET])

@@ -100,6 +100,7 @@ def cheapest_window(
     load_w: float,
     base_load_w: float = 0.0,
     earliest: datetime | None = None,
+    latest_end: datetime | None = None,
 ) -> Window | None:
     """The contiguous run of quarters of total ``length`` with the lowest
     average effective price, starting at or after ``earliest``.
@@ -108,7 +109,10 @@ def cheapest_window(
     shorter than the window.
     """
     n = max(1, round(length / QUARTER))
-    qs = [q for q in quarters if earliest is None or q.start >= earliest]
+    qs = [
+        q for q in quarters
+        if (earliest is None or q.start >= earliest) and (latest_end is None or q.end <= latest_end)
+    ]
     best: tuple[float, int] | None = None
     prices = [q.effective_price(load_w, base_load_w) for q in qs]
     averages: dict[int, float] = {}

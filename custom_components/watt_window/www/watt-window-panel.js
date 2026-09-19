@@ -158,7 +158,7 @@ class WattWindowPanel extends HTMLElement {
         <div class="legend">
           <span><i class="sw bar"></i>What a ${esc(d.settings.load_w)} W load costs each quarter-hour${d.solar.configured ? " (after solar)" : ""}</span>
           ${d.solar.configured ? `<span><i class="sw sun"></i>Solar forecast</span>` : ""}
-          <span><i class="sw band"></i>Highlighted window:
+          <span><i class="sw band" style="background:${WINDOW_COLOURS[Math.max(0, d.windows.findIndex((w) => w.minutes === this._highlight)) % WINDOW_COLOURS.length]}"></i>Highlighted window:
             <select id="hl">${d.windows.map((w) => `<option value="${w.minutes}" ${w.minutes === this._highlight ? "selected" : ""}>${esc(w.label)}</option>`).join("")}</select></span>
         </div>
         <p class="explain">Each bar is the price of one quarter-hour: Nord Pool spot plus your network rate, fees and VAT.
@@ -184,7 +184,17 @@ class WattWindowPanel extends HTMLElement {
         ? `<div class="s flex">Same price if you start any time up to ${this._time(w.latest_start)}</div>` : ""}
       <div class="s">${this._price(w.average_price)} on average${w.solar_share > 0 ? ` · ${Math.round(w.solar_share * 100)}% solar` : ""}</div>
       <div class="s">≈ ${this._money(w.cost)} to run ${esc(this._data.settings.load_w)} W${saving != null && saving > 0 && !w.active ? ` · ${saving}% below the price now` : ""}</div>
+      <div class="split">
+        ${this._periodLine("Daytime", w.day)}
+        ${this._periodLine("Overnight", w.night)}
+      </div>
     </div>`;
+  }
+
+  _periodLine(name, p) {
+    if (!p) return `<div class="s"><b>${name}:</b> not enough prices yet</div>`;
+    const when = p.active ? `now until ${this._time(p.end)}` : `${this._dayWord(p.start)} ${this._time(p.start)}–${this._time(p.end)}`;
+    return `<div class="s"><b>${name}:</b> ${when} · ${this._price(p.average_price)}</div>`;
   }
 
   _chart(d) {
@@ -271,6 +281,9 @@ class WattWindowPanel extends HTMLElement {
         load_w: s.load_w,
         base_load_w: s.base_load_w,
         has_battery: !!s.has_battery,
+        day_start: s.day_start,
+        day_end: s.day_end,
+        solar_entry_ids: [...(s.solar_entry_ids || [])],
         tariff: JSON.parse(JSON.stringify(s.tariff)),
       };
     }
@@ -294,16 +307,35 @@ class WattWindowPanel extends HTMLElement {
         </div>
       </div>
       <div class="card">
-        <h3>Your load</h3>
+        <h3>Day and night</h3>
+        <p class="s">Each length also gets a cheapest <b>daytime</b> and cheapest <b>overnight</b> window, for things that must happen in one or the other. This is your day, not your tariff's.</p>
         <div class="grid">
-          <label>Appliance power, for cost estimates (W)<input type="number" min="0" step="50" data-f="load_w" value="${f.load_w}"></label>
+          <label>Day starts at (hour)<input type="number" min="0" max="23" step="1" data-f="day_start" value="${f.day_start}"></label>
+          <label>Day ends at (hour)<input type="number" min="1" max="24" step="1" data-f="day_end" value="${f.day_end}"></label>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Solar</h3>
+        ${d.settings.solar_options.length
+          ? `<p class="s">Tick every Forecast.Solar setup that covers your panels. With more than one roof plane, add Forecast.Solar once per plane: the forecasts are added up.</p>
+             ${d.settings.solar_options.map((o) => `<label class="check"><input type="checkbox" data-solar="${esc(o.entry_id)}" ${f.solar_entry_ids.includes(o.entry_id) ? "checked" : ""}> ${esc(o.title)}</label>`).join("")}`
+          : `<p class="s">No Forecast.Solar setup yet. <a href="/config/integrations/dashboard/add?domain=forecast_solar">Add Forecast.Solar</a> (free; add it once per roof plane), then come back here and tick it.</p>`}
+        <div class="grid" style="margin-top:12px">
           <label>What your house uses on its own (W)<input type="number" min="0" step="50" data-f="base_load_w" value="${f.base_load_w}"></label>
         </div>
+        <p class="s">Your panels power the house first; only what's left over makes a window cheaper. If unsure, leave 500 W.</p>
+      </div>
+      <div class="card">
+        <h3>Home battery</h3>
         <label class="check"><input type="checkbox" id="battery" ${f.has_battery ? "checked" : ""}> I have a home battery</label>
-        <p class="s">Leave this off for now. Battery-aware windows (store spare solar for later instead of using it straight away) come in a later version; the setting is saved but changes nothing yet.</p>
-        <p class="s">Solar covers the house load first; only the rest counts towards running your load cheaply.
-        Solar source: <b>${d.solar.configured ? esc(d.solar.title || "Forecast.Solar") : "none"}</b> —
-        <a href="/config/integrations/integration/watt_window">change it in the integration settings</a>.</p>
+        <p class="s">Saved, but it doesn't change anything yet. Battery-aware windows (storing spare solar for later instead of using it straight away) come in a later version.</p>
+      </div>
+      <div class="card">
+        <h3>Cost estimates</h3>
+        <div class="grid">
+          <label>Appliance power (W)<input type="number" min="0" step="50" data-f="load_w" value="${f.load_w}"></label>
+        </div>
+        <p class="s">Only used for the "≈ € to run" figures and for how much of a window solar can cover.</p>
       </div>
       <div class="card">
         <h3>Tariff: ${esc(PLAN_NAMES[t.network_plan] || t.network_plan)}</h3>
@@ -346,6 +378,10 @@ class WattWindowPanel extends HTMLElement {
       else f.tariff[k] = Number(i.value);
     }));
     this.shadowRoot.getElementById("battery").addEventListener("change", (e) => (f.has_battery = e.target.checked));
+    $("[data-solar]").forEach((i) => i.addEventListener("change", () => {
+      const id = i.dataset.solar;
+      f.solar_entry_ids = i.checked ? [...new Set([...f.solar_entry_ids, id])] : f.solar_entry_ids.filter((x) => x !== id);
+    }));
     $("[data-tb]").forEach((i) => i.addEventListener("change", () => (f.tariff[i.dataset.tb] = i.checked)));
     this.shadowRoot.getElementById("save").addEventListener("click", () => this._save());
   }
@@ -360,6 +396,9 @@ class WattWindowPanel extends HTMLElement {
         load_w: this._draft.load_w,
         base_load_w: this._draft.base_load_w,
         has_battery: this._draft.has_battery,
+        day_start: this._draft.day_start,
+        day_end: this._draft.day_end,
+        solar_entry_ids: this._draft.solar_entry_ids,
         tariff: this._draft.tariff,
       });
       this._notice = { ok: true, text: "Saved. Watt Window has recalculated with your new settings." };
@@ -404,6 +443,7 @@ const STYLES = `
   .wl { font-size:13px; font-weight:500; color: var(--c); text-transform:uppercase; letter-spacing:.04em; }
   .when { font-size:18px; font-weight:500; margin:4px 0; }
   .flex { color: var(--primary-text-color); margin-bottom:4px; }
+  .split { border-top:1px solid var(--divider-color); margin-top:8px; padding-top:6px; }
   .chip { display:inline-flex; align-items:center; gap:4px; background: var(--c, var(--primary-color)); color:#fff; border-radius:10px; padding:1px 8px; font-size:12px; }
   .chip.big { background: var(--secondary-background-color); color: var(--primary-text-color); font-size:14px; padding:4px 4px 4px 10px; }
   .chip button { border:none; background:none; color: var(--secondary-text-color); font-size:16px; cursor:pointer; padding:0 4px; }

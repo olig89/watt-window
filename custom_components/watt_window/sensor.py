@@ -32,7 +32,8 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddC
     entities: list[SensorEntity] = [ImportPriceSensor(coord), ExportPriceSensor(coord), EffectivePriceSensor(coord)]
     if coord.data.solar_configured:
         entities.append(SolarNowSensor(coord))
-    entities += [WindowStartSensor(coord, m) for m in sorted(coord.data.windows)]
+    for kind in ("any", "day", "night"):
+        entities += [WindowStartSensor(coord, m, kind) for m in sorted(coord.data.windows)]
     remove_stale_entities(hass, entry.entry_id, "sensor", (e.unique_id for e in entities))
     async_add_entities(entities)
 
@@ -134,14 +135,17 @@ class WindowStartSensor(_Base):
     _attr_translation_key = "window_start"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
 
-    def __init__(self, coord, minutes: int) -> None:
-        super().__init__(coord, f"window_{minutes}_start")
+    def __init__(self, coord, minutes: int, kind: str = "any") -> None:
+        super().__init__(coord, f"window_{minutes}_start" if kind == "any" else f"window_{kind}_{minutes}_start")
         self._minutes = minutes
+        self._kind = kind
+        if kind != "any":
+            self._attr_translation_key = f"window_start_{kind}"
         self._attr_translation_placeholders = {"length": window_label(minutes)}
 
     @property
     def _window(self):
-        return self.coordinator.data.windows.get(self._minutes)
+        return self.coordinator.data.window(self._kind, self._minutes)
 
     @property
     def native_value(self):
@@ -160,4 +164,13 @@ class WindowStartSensor(_Base):
             "estimated_cost": round(w.cost, 4) if w else None,
             # Any start up to here costs the same; lets an automation wait until it suits you.
             "latest_same_price_start": w.latest_start.isoformat() if w and w.latest_start else None,
+        } | self._period_attributes()
+
+    def _period_attributes(self) -> dict:
+        if self._kind == "any":
+            return {}
+        span = self.coordinator.data.periods.get(self._kind, {}).get(self._minutes)
+        return {
+            "period_start": span[0].isoformat() if span else None,
+            "period_end": span[1].isoformat() if span else None,
         }

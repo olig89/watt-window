@@ -9,7 +9,10 @@ CONF_AREA = "area"
 CONF_COUNTRY = "country"
 CONF_PRESET = "preset"
 CONF_TARIFF = "tariff"
-CONF_SOLAR_ENTRY = "solar_entry_id"
+CONF_SOLAR_ENTRY = "solar_entry_id"  # 0.1-0.3: a single Forecast.Solar entry
+CONF_SOLAR_ENTRIES = "solar_entry_ids"  # one per roof plane; forecasts are added up
+CONF_DAY_START = "day_window_start"  # local hour the "daytime" windows start
+CONF_DAY_END = "day_window_end"
 CONF_BASE_LOAD_W = "base_load_w"
 # Saved now; the battery logic (bank surplus solar vs use it at once) comes later.
 CONF_HAS_BATTERY = "has_battery"
@@ -19,6 +22,8 @@ CONF_WINDOWS = "windows"  # list of window lengths in minutes
 DEFAULT_WINDOWS = [60, 120, 240, 360]
 DEFAULT_BASE_LOAD_W = 500
 DEFAULT_LOAD_W = 1000
+DEFAULT_DAY_START = 8
+DEFAULT_DAY_END = 20
 MAX_WINDOW_MINUTES = 24 * 60
 
 NORDPOOL_DOMAIN = "nordpool"
@@ -41,3 +46,18 @@ def window_label(minutes: int) -> str:
 def settings_of(entry) -> dict:
     """The effective settings of a config entry: data overlaid by options."""
     return {**entry.data, **entry.options}
+
+
+def solar_entry_ids(s: dict) -> list[str]:
+    """Forecast.Solar entries in use, reading the pre-0.4 single-entry setting too."""
+    if CONF_SOLAR_ENTRIES in s:
+        return list(s[CONF_SOLAR_ENTRIES] or [])
+    return [s[CONF_SOLAR_ENTRY]] if s.get(CONF_SOLAR_ENTRY) else []
+
+
+def solar_entry_label(entry) -> str:
+    """Forecast.Solar entries are created with an empty title: name them by their planes."""
+    if entry.title:
+        return entry.title
+    planes = [sub.title for sub in getattr(entry, "subentries", {}).values() if sub.title]
+    return "Forecast.Solar " + (", ".join(planes) if planes else entry.entry_id[:6])

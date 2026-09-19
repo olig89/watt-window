@@ -11,9 +11,11 @@ Watt Window never switches anything itself. It only provides sensors, so your au
 - **Spot prices** from the built-in [Nord Pool](https://www.home-assistant.io/integrations/nordpool/) integration, at 15-minute resolution. Tomorrow's prices are fetched once they are published, usually early afternoon.
 - **Your tariff:** a network rate that can be flat, day/night, or day/night with winter peaks (Estonia's Võrk 5), plus supplier margin, other per-kWh charges and VAT. Presets for Elektrilevi Võrk 1, 2, 4 and 5 are included. Anyone else can enter their own rates.
 - **Public holidays** for day/night tariffs that charge the night rate on holidays, from your country code.
-- **Solar (optional)** from the built-in [Forecast.Solar](https://www.home-assistant.io/integrations/forecast_solar/) integration. Your panels first cover your typical house load. Any spare output then covers the load you want to run, and that share costs only the export price you'd otherwise have earned. So a sunny midday can beat a cheap night, and it only does when it really is cheaper.
+- **Solar (optional)** from the built-in [Forecast.Solar](https://www.home-assistant.io/integrations/forecast_solar/) integration. Panels on more than one roof plane? Forecast.Solar asks for a paid API key to put two planes in one setup, but you can add Forecast.Solar **once per plane** for free and tick them all: Watt Window adds the forecasts up. Your panels first cover your typical house load. Any spare output then covers the load you want to run, and that share costs only the export price you'd otherwise have earned. So a sunny midday can beat a cheap night, and it only does when it really is cheaper.
 
 When prices are flat for a while (common at night, or on a day/night tariff at weekends), several windows can start at the same time: ties go to the earliest start. The sidebar page then says how late you could start for the same price, and the `latest_same_price_start` attribute lets an automation use that.
+
+Each length also gets a cheapest **daytime** and cheapest **overnight** window, for jobs that must happen in one or the other. The day runs 08:00-20:00 by default (change it on the Settings tab); a window is searched in the current day or night if enough of it is left, otherwise in the next one.
 
 Once a window has started, it stays put. A price update mid-window will not move it.
 
@@ -35,7 +37,7 @@ HACS shows an update when a new release is published. Download it and restart Ho
 ## The sidebar page
 
 - **Overview:** the price now, each window with its start time, average price, solar share and estimated cost, and a chart of the next two days of prices with the solar forecast and your chosen window shaded.
-- **Settings:** add or remove window lengths, change the load and house-load watts, and edit your tariff rates. Changes apply straight away.
+- **Settings:** window lengths, your day hours, which Forecast.Solar setups to use, home battery, appliance watts, and your tariff rates. Changes apply straight away.
 
 To change the tariff type (for example moving from a flat rate to day/night) or the solar forecast, use **Settings → Devices & services → Watt Window → Configure**.
 
@@ -49,6 +51,8 @@ To change the tariff type (for example moving from a flat rate to day/night) or 
 | `sensor.watt_window_solar_forecast_now` | Forecast solar output now, W (only with solar) |
 | `sensor.watt_window_cheapest_<length>_window` | Start of the cheapest window of that length. Attributes: `end`, `average_price`, `average_import_price`, `solar_share`, `estimated_cost`, `latest_same_price_start` |
 | `binary_sensor.watt_window_in_cheapest_<length>_window` | On while that window is running |
+| `sensor.watt_window_cheapest_daytime_<length>_window`, `..._overnight_...` | The same, within the day or the night. Extra attributes: `period_start`, `period_end` |
+| `binary_sensor.watt_window_in_cheapest_daytime_<length>_window`, `..._overnight_...` | On while that window is running |
 
 `<length>` is written like `1_h`, `1_5_h` or `45_min`.
 

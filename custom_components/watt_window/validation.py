@@ -62,6 +62,16 @@ def clean_windows(minutes) -> list[int]:
     return out
 
 
+def clean_day_hours(start, end) -> tuple[int, int]:
+    try:
+        start, end = int(start), int(end)
+    except (TypeError, ValueError) as err:
+        raise SettingsError("bad_day_hours") from err
+    if not 0 <= start < end <= 24 or (start == 0 and end == 24):
+        raise SettingsError("bad_day_hours")
+    return start, end
+
+
 def parse_hours_list(text: str) -> list[int]:
     """'1, 2, 1.5' (hours) -> [60, 90, 120] minutes."""
     try:

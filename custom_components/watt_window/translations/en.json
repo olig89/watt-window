@@ -46,9 +46,9 @@
       },
       "solar": {
         "title": "Solar forecast",
-        "description": "Pick your Forecast.Solar setup. Windows will favour times when your panels are forecast to make more than the house is using.",
+        "description": "Pick your Forecast.Solar setups. With panels on more than one roof plane, add Forecast.Solar once per plane and tick them all: the forecasts are added up.",
         "data": {
-          "solar_entry_id": "Forecast.Solar",
+          "solar_entry_ids": "Forecast.Solar setups",
           "base_load_w": "What your house uses on its own"
         },
         "data_description": {
@@ -72,7 +72,9 @@
       "bad_plan": "Unknown tariff type.",
       "bad_rate": "Every network rate needs a number.",
       "bad_hours": "The day rate must start before it ends, between 0 and 24.",
-      "bad_vat": "VAT must be between 0 and 99 %."
+      "bad_vat": "VAT must be between 0 and 99 %.",
+      "bad_day_hours": "The day must start before it ends, between 0 and 24.",
+      "bad_solar": "That Forecast.Solar setup no longer exists."
     }
   },
   "options": {
@@ -123,9 +125,9 @@
       },
       "solar": {
         "title": "Solar forecast",
-        "description": "Pick your Forecast.Solar setup. Windows will favour times when your panels are forecast to make more than the house is using.",
+        "description": "Pick your Forecast.Solar setups. With panels on more than one roof plane, add Forecast.Solar once per plane and tick them all: the forecasts are added up.",
         "data": {
-          "solar_entry_id": "Forecast.Solar",
+          "solar_entry_ids": "Forecast.Solar setups",
           "base_load_w": "What your house uses on its own"
         },
         "data_description": {
@@ -147,7 +149,9 @@
       "bad_hours": "The day rate must start before it ends, between 0 and 24.",
       "bad_vat": "VAT must be between 0 and 99 %.",
       "no_windows": "Add at least one window length.",
-      "bad_window": "Window lengths must be between 0.25 and 24 hours, in quarter-hour steps."
+      "bad_window": "Window lengths must be between 0.25 and 24 hours, in quarter-hour steps.",
+      "bad_day_hours": "The day must start before it ends, between 0 and 24.",
+      "bad_solar": "That Forecast.Solar setup no longer exists."
     }
   },
   "entity": {
@@ -166,11 +170,23 @@
       },
       "window_start": {
         "name": "Cheapest {length} window"
+      },
+      "window_start_day": {
+        "name": "Cheapest daytime {length} window"
+      },
+      "window_start_night": {
+        "name": "Cheapest overnight {length} window"
       }
     },
     "binary_sensor": {
       "in_window": {
         "name": "In cheapest {length} window"
+      },
+      "in_window_day": {
+        "name": "In cheapest daytime {length} window"
+      },
+      "in_window_night": {
+        "name": "In cheapest overnight {length} window"
       }
     }
   }

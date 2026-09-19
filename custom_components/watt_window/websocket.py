@@ -11,18 +11,25 @@ from homeassistant.core import HomeAssistant, callback
 
 from .const import (
     CONF_BASE_LOAD_W,
+    CONF_DAY_END,
+    CONF_DAY_START,
     CONF_HAS_BATTERY,
     CONF_LOAD_W,
-    CONF_SOLAR_ENTRY,
+    CONF_SOLAR_ENTRIES,
     CONF_TARIFF,
     CONF_WINDOWS,
     DEFAULT_BASE_LOAD_W,
+    DEFAULT_DAY_END,
+    DEFAULT_DAY_START,
     DEFAULT_LOAD_W,
     DOMAIN,
+    FORECAST_SOLAR_DOMAIN,
     settings_of,
+    solar_entry_ids,
+    solar_entry_label,
     window_label,
 )
-from .validation import SettingsError, clean_tariff, clean_windows
+from .validation import SettingsError, clean_day_hours, clean_tariff, clean_windows
 
 
 @callback
@@ -52,9 +59,23 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
     s = settings_of(entry)
     load_w = float(s.get(CONF_LOAD_W, DEFAULT_LOAD_W))
     base_w = float(s.get(CONF_BASE_LOAD_W, DEFAULT_BASE_LOAD_W))
-    solar_title = None
-    if s.get(CONF_SOLAR_ENTRY) and (se := hass.config_entries.async_get_entry(s[CONF_SOLAR_ENTRY])):
-        solar_title = se.title
+    solar_options = [
+        {"entry_id": e.entry_id, "title": solar_entry_label(e)}
+        for e in hass.config_entries.async_entries(FORECAST_SOLAR_DOMAIN)
+    ]
+    chosen = solar_entry_ids(s)
+    solar_title = ", ".join(o["title"] for o in solar_options if o["entry_id"] in chosen) or None
+
+    def brief(w):
+        if w is None:
+            return None
+        return {
+            "start": _iso(w.start),
+            "end": _iso(w.end),
+            "latest_start": _iso(w.latest_start),
+            "average_price": round(w.average_price, 5),
+            "active": w.contains(data.now),
+        }
     connection.send_result(
         msg["id"],
         {
@@ -87,6 +108,8 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
                     "solar_share": round(w.solar_share, 3) if w else None,
                     "cost": round(w.cost, 4) if w else None,
                     "active": bool(w and w.contains(data.now)),
+                    "day": brief(data.window("day", m)),
+                    "night": brief(data.window("night", m)),
                 }
                 for m, w in sorted(data.windows.items())
             ],
@@ -99,6 +122,10 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
                 "base_load_w": base_w,
                 "load_w": load_w,
                 "has_battery": bool(s.get(CONF_HAS_BATTERY, False)),
+                "day_start": int(s.get(CONF_DAY_START, DEFAULT_DAY_START)),
+                "day_end": int(s.get(CONF_DAY_END, DEFAULT_DAY_END)),
+                "solar_entry_ids": chosen,
+                "solar_options": solar_options,
             },
         },
     )
@@ -112,6 +139,9 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
         vol.Optional("base_load_w"): vol.Coerce(float),
         vol.Optional("load_w"): vol.Coerce(float),
         vol.Optional("has_battery"): bool,
+        vol.Optional("day_start"): vol.Coerce(int),
+        vol.Optional("day_end"): vol.Coerce(int),
+        vol.Optional("solar_entry_ids"): [str],
     }
 )
 @websocket_api.require_admin
@@ -134,6 +164,19 @@ async def ws_save(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
                 options[key] = msg[key]
         if "has_battery" in msg:
             options[CONF_HAS_BATTERY] = msg["has_battery"]
+        if "day_start" in msg or "day_end" in msg:
+            current = settings_of(entry)
+            start, end = clean_day_hours(
+                msg.get("day_start", current.get(CONF_DAY_START, DEFAULT_DAY_START)),
+                msg.get("day_end", current.get(CONF_DAY_END, DEFAULT_DAY_END)),
+            )
+            options[CONF_DAY_START], options[CONF_DAY_END] = start, end
+        if "solar_entry_ids" in msg:
+            known = {e.entry_id for e in hass.config_entries.async_entries(FORECAST_SOLAR_DOMAIN)}
+            ids = list(dict.fromkeys(msg["solar_entry_ids"]))
+            if any(i not in known for i in ids):
+                raise SettingsError("bad_solar")
+            options[CONF_SOLAR_ENTRIES] = ids
     except SettingsError as err:
         connection.send_error(msg["id"], err.key, str(err))
         return

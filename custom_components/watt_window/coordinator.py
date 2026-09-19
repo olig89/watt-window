@@ -20,19 +20,24 @@ from .const import (
     CONF_AREA,
     CONF_BASE_LOAD_W,
     CONF_COUNTRY,
+    CONF_DAY_END,
+    CONF_DAY_START,
     CONF_LOAD_W,
-    CONF_SOLAR_ENTRY,
     CONF_TARIFF,
     CONF_WINDOWS,
     DEFAULT_BASE_LOAD_W,
+    DEFAULT_DAY_END,
+    DEFAULT_DAY_START,
     DEFAULT_LOAD_W,
     DEFAULT_WINDOWS,
     DOMAIN,
     FORECAST_SOLAR_DOMAIN,
     NORDPOOL_DOMAIN,
     settings_of,
+    solar_entry_ids,
 )
 from .core import nordpool
+from .core.periods import KINDS, period_for
 from .core.solar import quarter_watts
 from .core.windows import Quarter, Window, cheapest_window, price_quarters
 
@@ -54,6 +59,14 @@ class WattWindowData:
     solar_configured: bool
     solar_ok: bool
     warnings: list[str] = field(default_factory=list)
+    # "day" / "night" -> minutes -> cheapest window inside that period.
+    period_windows: dict[str, dict[int, Window | None]] = field(default_factory=dict)
+    periods: dict[str, dict[int, tuple[datetime, datetime] | None]] = field(default_factory=dict)
+
+    def window(self, kind: str, minutes: int) -> Window | None:
+        if kind == "any":
+            return self.windows.get(minutes)
+        return self.period_windows.get(kind, {}).get(minutes)
 
     def quarter_at(self, t: datetime) -> Quarter | None:
         for q in self.quarters:
@@ -71,7 +84,7 @@ class WattWindowCoordinator(DataUpdateCoordinator[WattWindowData]):
         super().__init__(hass, _LOGGER, name=DOMAIN, config_entry=entry, update_interval=None)
         # Prices for a market date never change once published: cache them.
         self._price_cache: dict[date, list[dict]] = {}
-        self._committed: dict[int, Window] = {}
+        self._committed: dict[tuple[str, int], Window] = {}
         self._holidays: dict[tuple[str, int], set[date]] = {}
 
     @property
@@ -186,12 +199,21 @@ class WattWindowCoordinator(DataUpdateCoordinator[WattWindowData]):
         holidays = await self._holiday_dates(s.get(CONF_COUNTRY) or "", years) if s.get(CONF_COUNTRY) else set()
 
         warnings: list[str] = []
-        solar_entry = s.get(CONF_SOLAR_ENTRY)
-        solar_w = None
-        if solar_entry:
-            solar_w = await self._solar(solar_entry)
-            if solar_w is None:
-                warnings.append("Solar forecast unavailable: windows use grid prices only.")
+        solar_ids = solar_entry_ids(s)
+        solar_w: dict[datetime, float] | None = None
+        failed = 0
+        for entry_id in solar_ids:
+            part = await self._solar(entry_id)
+            if part is None:
+                failed += 1
+                continue
+            solar_w = solar_w or {}
+            for t, w in part.items():
+                solar_w[t] = solar_w.get(t, 0.0) + w
+        if solar_ids and solar_w is None:
+            warnings.append("Solar forecast unavailable: windows use grid prices only.")
+        elif failed:
+            warnings.append(f"{failed} of {len(solar_ids)} solar forecasts unavailable: the total is too low.")
 
         tariff = {**s[CONF_TARIFF], "timezone": tz}
         quarters = price_quarters(spots, tariff, holidays, solar_w)
@@ -199,19 +221,31 @@ class WattWindowCoordinator(DataUpdateCoordinator[WattWindowData]):
         base_w = float(s.get(CONF_BASE_LOAD_W, DEFAULT_BASE_LOAD_W))
         current = quarter_floor(now)
 
-        windows: dict[int, Window | None] = {}
-        for minutes in s.get(CONF_WINDOWS) or DEFAULT_WINDOWS:
-            minutes = int(minutes)
-            kept = self._committed.get(minutes)
+        def pick(key: tuple[str, int], earliest: datetime, latest_end: datetime | None) -> Window | None:
+            kept = self._committed.get(key)
             if kept is not None and kept.contains(now):
-                windows[minutes] = kept  # never move a window that has started
-                continue
-            w = cheapest_window(quarters, timedelta(minutes=minutes), load_w, base_w, earliest=current)
-            windows[minutes] = w
+                return kept  # never move a window that has started
+            w = cheapest_window(
+                quarters, timedelta(minutes=key[1]), load_w, base_w, earliest=earliest, latest_end=latest_end
+            )
             if w is not None:
-                self._committed[minutes] = w
+                self._committed[key] = w
             else:
-                self._committed.pop(minutes, None)
+                self._committed.pop(key, None)
+            return w
+
+        lengths = [int(m) for m in s.get(CONF_WINDOWS) or DEFAULT_WINDOWS]
+        windows = {m: pick(("any", m), current, None) for m in lengths}
+        day_start = int(s.get(CONF_DAY_START, DEFAULT_DAY_START))
+        day_end = int(s.get(CONF_DAY_END, DEFAULT_DAY_END))
+        period_windows: dict[str, dict[int, Window | None]] = {}
+        periods: dict[str, dict[int, tuple[datetime, datetime] | None]] = {}
+        for kind in KINDS:
+            period_windows[kind], periods[kind] = {}, {}
+            for m in lengths:
+                span = period_for(now, tz, day_start, day_end, kind, timedelta(minutes=m))
+                periods[kind][m] = span
+                period_windows[kind][m] = pick((kind, m), max(current, span[0]), span[1]) if span else None
 
         return WattWindowData(
             quarters=quarters,
@@ -219,7 +253,9 @@ class WattWindowCoordinator(DataUpdateCoordinator[WattWindowData]):
             now=now,
             currency=currency,
             prices_until=quarters[-1].end if quarters else None,
-            solar_configured=bool(solar_entry),
+            solar_configured=bool(solar_ids),
             solar_ok=solar_w is not None,
             warnings=warnings,
+            period_windows=period_windows,
+            periods=periods,
         )
