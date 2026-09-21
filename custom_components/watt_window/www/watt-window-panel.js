@@ -23,7 +23,7 @@ const RATE_KEYS = {
 const PLAN_NAMES = { flat: "One rate", day_night: "Day / night", vork5: "Day / night / winter peaks (Võrk 5)" };
 // Must match manifest.json (a test checks). Compared with the running integration
 // so a tab still holding old page code after an update says so.
-const PANEL_VERSION = "0.9.0";
+const PANEL_VERSION = "0.10.0";
 
 const DIRECTIONS = [
   [0, "North"], [45, "North-east"], [90, "East"], [135, "South-east"],
@@ -64,7 +64,8 @@ class WattWindowPanel extends HTMLElement {
     this._draft = null;
     this._highlight = null;
     this._focus = null; // a Watt Window length picked on the chart's lanes
-    this._showSolar = loadPref("showSolar", true);
+    this._chartInfo = loadPref("chartInfo", false);
+    this._switching = false;
     this._expanded = new Set(loadPref("expanded", []));
     this._saving = false;
     this._notice = null;
@@ -184,16 +185,22 @@ class WattWindowPanel extends HTMLElement {
         <div class="meta">${this._horizon(d)} · ${solarLine}</div>
         ${d.warnings.map((w) => `<div class="meta bad">${esc(w)}</div>`).join("")}
       </div>
-      <h2>Cheapest Watt Windows</h2>
+      <div class="sechead">
+        <h2>Cheapest Watt Windows</h2>
+        <div class="switches">${this._sourceSwitches(d)}</div>
+      </div>
       <div class="windows">${windows || `<div class="card">No Watt Windows set up. Add some in Settings.</div>`}</div>
-      <h2>Every price we know</h2>
+      <div class="sechead">
+        <h2>Every price we know</h2>
+        ${this._foldButton("chartinfo", this._chartInfo, "about this chart")}
+      </div>
       <div class="card">
         ${this._chart(d)}
         <div class="legend">
-          <span><i class="sw bar"></i>What a ${esc(d.settings.load_w)} W load costs each quarter-hour${d.solar.configured ? (this._showSolar ? " (after solar)" : " (grid only, as if you had no solar)") : ""}</span>
-          ${d.solar.configured && this._showSolar ? `<span><i class="sw sun"></i>Solar forecast</span>` : ""}
-          ${d.solar.configured ? `<label class="check toggle"><input type="checkbox" id="showsolar" ${this._showSolar ? "checked" : ""}> Show solar</label>` : ""}
+          <span><i class="sw bar"></i>What a ${esc(d.settings.load_w)} W load costs each quarter-hour${d.solar.configured ? " (after solar)" : d.solar.paused ? " (grid only: solar is switched off)" : ""}</span>
+          ${d.solar.configured ? `<span><i class="sw sun"></i>Solar forecast</span>` : ""}
         </div>
+        ${this._chartInfo ? `<div class="chartinfo">
         <p class="explain lanes-note">The coloured lanes under the chart are your Watt Windows, one lane per length. A paler tail means you could start later for the same price. Tap a lane to shade that Watt Window on the chart.</p>
         <p class="explain"><b>Why the chart stops where it does:</b> ${esc(d.price_source)} sets tomorrow's prices once a day, at an auction that closes at noon Central European time; they're published about 45 minutes later${d.next_prices_at ? ` (${this._when(d.next_prices_at)} your time)` : ""}. Before that, nobody knows prices beyond midnight CET, so the furthest anyone can see is roughly a day and a half, and some mornings less than a day.</p>
         ${d.solar.credit ? `<p class="explain credit">Solar estimate: ${esc(d.solar.credit)}.</p>` : ""}
@@ -202,7 +209,30 @@ class WattWindowPanel extends HTMLElement {
         ? "Where your panels are forecast to produce more than your typical house load, the spare output covers the load first, so that part only costs the export price you'd otherwise have earned."
         : "Where your panels are forecast to produce more than your typical house load, the spare output covers the load first. Your system doesn't export, so that spare power would otherwise be lost: using it is free.") : ""}
         A Watt Window is the run of quarter-hours with the lowest average. Once a Watt Window has started it stays put, even if prices change.</p>
+        </div>` : ""}
       </div>`;
+  }
+
+  // One fold-out control used everywhere (cards and the chart), so they look and behave alike.
+  _foldButton(id, open, what) {
+    return `<button class="more" data-fold="${id}" aria-expanded="${open}" aria-label="${open ? "Hide" : "Show"} ${what}" title="${open ? "Hide" : "Show"} ${what}">
+      <ha-icon icon="mdi:chevron-down" class="${open ? "flip" : ""}"></ha-icon></button>`;
+  }
+
+  _sourceSwitches(d) {
+    const hasSolar = d.settings.solar_source && d.settings.solar_source !== "none";
+    const solarOn = hasSolar && d.settings.use_solar;
+    const solar = hasSolar
+      ? `<label class="srcswitch" title="${solarOn ? "Watt Windows use your solar forecast. Switch off to see grid prices only." : "Solar is switched off: Watt Windows use grid prices only."}">
+          <ha-icon icon="mdi:solar-power-variant"></ha-icon><span>Solar</span>
+          <input type="checkbox" role="switch" id="usesolar" ${solarOn ? "checked" : ""} ${this._switching ? "disabled" : ""} aria-label="Use solar in Watt Windows"></label>`
+      : `<label class="srcswitch off" title="No solar set up. Add it on the Settings tab.">
+          <ha-icon icon="mdi:solar-power-variant"></ha-icon><span>Solar</span>
+          <input type="checkbox" role="switch" disabled aria-label="Solar (not set up)"></label>`;
+    const battery = `<label class="srcswitch off" title="Battery-aware Watt Windows are coming in a later version.">
+          <ha-icon icon="mdi:home-battery"></ha-icon><span>Battery</span>
+          <input type="checkbox" role="switch" disabled aria-label="Battery (coming later)"></label>`;
+    return solar + battery;
   }
 
   _horizon(d) {
@@ -230,9 +260,7 @@ class WattWindowPanel extends HTMLElement {
     return `<div class="card win" style="--c:${colour}">
       <div class="head">
         <div class="wl">${esc(w.label)}</div>
-        <button class="more" data-more="${w.minutes}" aria-expanded="${open}" aria-label="${open ? "Hide" : "Show"} details for ${esc(w.label)}" title="${open ? "Hide" : "Show"} details">
-          <ha-icon icon="mdi:chevron-down" class="${open ? "flip" : ""}"></ha-icon>
-        </button>
+        ${this._foldButton(`win-${w.minutes}`, open, `details for ${esc(w.label)}`)}
       </div>
       <div class="when">${when}</div>
       ${!w.active && w.latest_start && w.latest_start !== w.start
@@ -268,7 +296,7 @@ class WattWindowPanel extends HTMLElement {
   _chart(d) {
     const qs = d.quarters;
     if (!qs.length) return `<div class="s">No prices yet.</div>`;
-    const showSolar = d.solar.configured && this._showSolar;
+    const showSolar = d.solar.configured;
     const price = (q) => (showSolar ? q.effective : q.import);
     const lanes = d.windows.filter((w) => w.start);
     const LANE_H = 14, LANE_GAP = 6;
@@ -353,16 +381,30 @@ class WattWindowPanel extends HTMLElement {
 
   _bindOverview() {
     const r = this.shadowRoot;
-    r.querySelectorAll("[data-more]").forEach((b) => b.addEventListener("click", () => {
-      const m = Number(b.dataset.more);
-      if (this._expanded.has(m)) this._expanded.delete(m); else this._expanded.add(m);
-      savePref("expanded", [...this._expanded]);
+    r.querySelectorAll("[data-fold]").forEach((b) => b.addEventListener("click", () => {
+      const id = b.dataset.fold;
+      if (id === "chartinfo") {
+        this._chartInfo = !this._chartInfo;
+        savePref("chartInfo", this._chartInfo);
+      } else {
+        const m = Number(id.slice(4));
+        if (this._expanded.has(m)) this._expanded.delete(m); else this._expanded.add(m);
+        savePref("expanded", [...this._expanded]);
+      }
       this._render();
     }));
-    const solar = r.getElementById("showsolar");
-    if (solar) solar.addEventListener("change", () => {
-      this._showSolar = solar.checked;
-      savePref("showSolar", this._showSolar);
+    const useSolar = r.getElementById("usesolar");
+    if (useSolar) useSolar.addEventListener("change", async () => {
+      this._switching = true;
+      this._render();
+      try {
+        await this._hass.connection.sendMessagePromise({ type: "watt_window/save", use_solar: useSolar.checked });
+        await new Promise((res) => setTimeout(res, 1500)); // the integration reloads and recalculates
+        await this._load();
+      } catch (e) {
+        this._error = e.message || String(e);
+      }
+      this._switching = false;
       this._render();
     });
     const pick = (el) => {
@@ -416,10 +458,7 @@ class WattWindowPanel extends HTMLElement {
       <div class="card">
         <h3>Day and night</h3>
         <p class="s">Each length also gets a cheapest <b>daytime</b> and cheapest <b>overnight</b> Watt Window, for things that must happen in one or the other. This is your day, not your tariff's.</p>
-        <div class="grid">
-          <label>Day starts at (hour)<input type="number" min="0" max="23" step="1" data-f="day_start" value="${f.day_start}"></label>
-          <label>Day ends at (hour)<input type="number" min="1" max="24" step="1" data-f="day_end" value="${f.day_end}"></label>
-        </div>
+        ${this._daySlider(f)}
       </div>
       <div class="card">
         <h3>Solar</h3>
@@ -464,6 +503,24 @@ class WattWindowPanel extends HTMLElement {
         </div>
       </div>
       <div class="actions"><button class="btn primary" id="save" ${this._saving ? "disabled" : ""}>${this._saving ? "Saving…" : "Save"}</button></div>`;
+  }
+
+  _daySlider(f) {
+    const pct = (h) => (h / 24) * 100;
+    const hh = (h) => `${String(h % 24).padStart(2, "0")}:00`;
+    return `<div class="dayslider" id="dayslider" style="--a:${pct(f.day_start)}%;--b:${pct(f.day_end)}%">
+        <div class="track"><div class="dayband"></div></div>
+        <input type="range" min="0" max="24" step="1" id="daystart" value="${f.day_start}" aria-label="Day starts at" aria-valuetext="${hh(f.day_start)}">
+        <input type="range" min="0" max="24" step="1" id="dayend" value="${f.day_end}" aria-label="Day ends at" aria-valuetext="${hh(f.day_end)}">
+        <div class="ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+      </div>
+      <div class="dayreadout" id="dayreadout">${this._dayReadout(f)}</div>`;
+  }
+
+  _dayReadout(f) {
+    const hh = (h) => `${String(h % 24).padStart(2, "0")}:00`;
+    return `<span><ha-icon icon="mdi:weather-sunny"></ha-icon> Day ${hh(f.day_start)}–${hh(f.day_end)}</span>
+      <span><ha-icon icon="mdi:weather-night"></ha-icon> Night ${hh(f.day_end)}–${hh(f.day_start)}</span>`;
   }
 
   _planesEditor(f) {
@@ -531,6 +588,26 @@ class WattWindowPanel extends HTMLElement {
       f.solar_planes.splice(Number(b.dataset.rmplane), 1);
       this._render();
     }));
+    // Day slider: two native range inputs share one track (keyboard + screen reader work as normal).
+    const ds = this.shadowRoot.getElementById("daystart"), de = this.shadowRoot.getElementById("dayend");
+    if (ds && de) {
+      const hh = (h) => `${String(h % 24).padStart(2, "0")}:00`;
+      const sync = (moved) => {
+        let a = Number(ds.value), b = Number(de.value);
+        if (b - a < 1) { if (moved === ds) a = b - 1; else b = a + 1; }
+        if (b - a > 23) { if (moved === ds) a = b - 23; else b = a + 23; } // some night must remain
+        a = Math.max(0, Math.min(23, a)); b = Math.max(1, Math.min(24, b));
+        ds.value = a; de.value = b;
+        f.day_start = a; f.day_end = b;
+        ds.setAttribute("aria-valuetext", hh(a)); de.setAttribute("aria-valuetext", hh(b));
+        const box = this.shadowRoot.getElementById("dayslider");
+        box.style.setProperty("--a", `${(a / 24) * 100}%`);
+        box.style.setProperty("--b", `${(b / 24) * 100}%`);
+        this.shadowRoot.getElementById("dayreadout").innerHTML = this._dayReadout(f);
+      };
+      ds.addEventListener("input", () => sync(ds));
+      de.addEventListener("input", () => sync(de));
+    }
     const canExport = this.shadowRoot.getElementById("canexport");
     if (canExport) canExport.addEventListener("change", (e) => (f.can_export = e.target.checked));
     const addPlane = this.shadowRoot.getElementById("addplane");
@@ -631,6 +708,31 @@ const STYLES = `
   .lane-label { font-weight:600; }
   .toggle { flex-direction:row; }
   .lanes-note { margin-top:6px; }
+  .sechead { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin:20px 4px 8px; }
+  .sechead h2 { margin:0; }
+  .switches { display:flex; gap:14px; flex-wrap:wrap; }
+  .srcswitch { display:inline-flex; flex-direction:row; align-items:center; gap:6px; font-size:14px; color: var(--primary-text-color); cursor:pointer; }
+  .srcswitch.off { color: var(--disabled-text-color, #9e9e9e); cursor:not-allowed; }
+  .srcswitch ha-icon { --mdc-icon-size: 20px; }
+  .srcswitch input[type=checkbox] { appearance:none; -webkit-appearance:none; width:34px; height:14px; border-radius:7px; background: var(--switch-unchecked-track-color, #bdbdbd); position:relative; margin:0 0 0 2px; cursor:inherit; transition: background .2s; }
+  .srcswitch input[type=checkbox]::after { content:""; position:absolute; top:-3px; left:-2px; width:20px; height:20px; border-radius:50%; background: var(--switch-unchecked-button-color, #fafafa); box-shadow: 0 1px 3px rgba(0,0,0,.4); transition: left .2s, background .2s; }
+  .srcswitch input[type=checkbox]:checked { background: color-mix(in srgb, var(--primary-color) 50%, transparent); }
+  .srcswitch input[type=checkbox]:checked::after { left:16px; background: var(--primary-color); }
+  .srcswitch input[type=checkbox]:disabled { opacity:.5; }
+  .srcswitch input[type=checkbox]:focus-visible { outline:2px solid var(--primary-color); outline-offset:3px; }
+  .chartinfo { margin-top:4px; }
+  .dayslider { position:relative; height:44px; margin:10px 10px 0; }
+  .dayslider .track { position:absolute; left:0; right:0; top:14px; height:10px; border-radius:5px; background: #37474f; opacity:.75; }
+  .dayslider .dayband { position:absolute; top:0; bottom:0; left:var(--a); width:calc(var(--b) - var(--a)); background:#fbc02d; border-radius:5px; }
+  .dayslider input[type=range] { position:absolute; left:-10px; right:-10px; width:calc(100% + 20px); top:6px; margin:0; height:26px; background:none; pointer-events:none; -webkit-appearance:none; appearance:none; }
+  .dayslider input[type=range]::-webkit-slider-runnable-track { background:none; }
+  .dayslider input[type=range]::-moz-range-track { background:none; }
+  .dayslider input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; pointer-events:auto; width:22px; height:22px; border-radius:50%; background: var(--card-background-color); border:3px solid var(--primary-color); cursor:grab; }
+  .dayslider input[type=range]::-moz-range-thumb { pointer-events:auto; width:16px; height:16px; border-radius:50%; background: var(--card-background-color); border:3px solid var(--primary-color); cursor:grab; }
+  .dayslider input[type=range]:focus-visible::-webkit-slider-thumb { outline:2px solid var(--primary-color); outline-offset:2px; }
+  .dayslider .ticks { position:absolute; left:0; right:0; top:28px; display:flex; justify-content:space-between; font-size:11px; color: var(--secondary-text-color); }
+  .dayreadout { display:flex; gap:18px; flex-wrap:wrap; font-size:14px; margin:10px 0 0; }
+  .dayreadout ha-icon { --mdc-icon-size: 18px; color: var(--secondary-text-color); }
   .split { border-top:1px solid var(--divider-color); margin-top:8px; padding-top:6px; }
   .chip { display:inline-flex; align-items:center; gap:4px; background: var(--c, var(--primary-color)); color:#fff; border-radius:10px; padding:1px 8px; font-size:12px; }
   .chip.big { background: var(--secondary-background-color); color: var(--primary-text-color); font-size:14px; padding:4px 4px 4px 10px; }

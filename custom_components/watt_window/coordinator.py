@@ -23,6 +23,7 @@ from .const import (
     CONF_DAY_START,
     CONF_LOAD_W,
     CONF_TARIFF,
+    CONF_USE_SOLAR,
     CONF_WINDOWS,
     DEFAULT_BASE_LOAD_W,
     DEFAULT_DAY_END,
@@ -35,7 +36,7 @@ from .const import (
 from .core.periods import KINDS, period_for
 from .core.windows import Quarter, Window, cheapest_window, price_quarters
 from .sources import PriceSourceError, price_source
-from .sources.solar import solar_source
+from .sources.solar import solar_source, solar_source_kind
 
 _LOGGER = logging.getLogger(__name__)
 QUARTER = timedelta(minutes=15)
@@ -62,6 +63,7 @@ class WattWindowData:
     price_source: str = ""
     solar_title: str | None = None
     solar_credit: str | None = None
+    solar_paused: bool = False  # set up, but switched off on the page
     periods: dict[str, dict[int, tuple[datetime, datetime] | None]] = field(default_factory=dict)
 
     def window(self, kind: str, minutes: int) -> Window | None:
@@ -130,7 +132,7 @@ class WattWindowCoordinator(DataUpdateCoordinator[WattWindowData]):
         holidays = await self._holiday_dates(s.get(CONF_COUNTRY) or "", years) if s.get(CONF_COUNTRY) else set()
 
         warnings: list[str] = []
-        solar = solar_source(self.hass, s, self._solar_cache)
+        solar = solar_source(self.hass, s, self._solar_cache) if s.get(CONF_USE_SOLAR, True) else None
         solar_w = await solar.async_watts(now) if solar else None
         if solar:
             warnings += solar.warnings
@@ -184,6 +186,7 @@ class WattWindowCoordinator(DataUpdateCoordinator[WattWindowData]):
             price_source=source.name,
             solar_title=solar.title if solar else None,
             solar_credit=solar.credit if solar else None,
+            solar_paused=not s.get(CONF_USE_SOLAR, True) and solar_source_kind(s) != "none",
         )
 
     def settled(self, kind: str, minutes: int) -> bool:

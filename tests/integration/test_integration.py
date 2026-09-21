@@ -489,3 +489,22 @@ async def test_panel_api_reports_the_running_version(hass, tallinn, nordpool, ha
     data = (await ws.receive_json())["result"]
     manifest = Path(__file__).resolve().parents[2] / "custom_components" / "watt_window" / "manifest.json"
     assert data["version"] == json.loads(manifest.read_text(encoding="utf-8"))["version"]
+
+
+@pytest.mark.freeze_time("2026-09-21 12:00:00+00:00")
+@pytest.mark.parametrize("price_fn", [sunny_day_price])
+async def test_switching_solar_off_changes_the_watt_windows(hass, tallinn, nordpool, forecast_solar, hass_ws_client):
+    entry = await setup(hass, solar_entry_id=forecast_solar.entry_id)
+    # With solar, the sunny midday wins (see test_solar_surplus_wins_when_export_is_worth_less).
+    assert hass.states.get("sensor.watt_window_cheapest_1_h_window").state == "2026-09-22T10:00:00+00:00"
+    ws = await hass_ws_client(hass)
+    await ws.send_json({"id": 1, "type": "watt_window/save", "use_solar": False})
+    assert (await ws.receive_json())["success"]
+    await hass.async_block_till_done()
+    # Grid prices only: the cheap night block wins, and the solar sensor goes.
+    assert hass.states.get("sensor.watt_window_cheapest_1_h_window").state.startswith("2026-09-22T02:")
+    assert hass.states.get("sensor.watt_window_solar_forecast_now") is None
+    await ws.send_json({"id": 2, "type": "watt_window/data"})
+    data = (await ws.receive_json())["result"]
+    assert data["settings"]["use_solar"] is False and data["solar"]["paused"] is True
+    assert entry.data["solar_entry_id"] == forecast_solar.entry_id  # the solar setup itself is kept
