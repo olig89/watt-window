@@ -17,6 +17,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .cleanup import remove_stale_entities
 from .const import CONF_BASE_LOAD_W, CONF_LOAD_W, DEFAULT_BASE_LOAD_W, DEFAULT_LOAD_W, DOMAIN, NAME, window_label
 from .coordinator import WattWindowCoordinator
+from .advisor import signal as heat_pump_signal
+from .core.heatpump import BOOST, HOLD_BACK, NORMAL
 from .spare import signal as spare_signal
 
 
@@ -36,6 +38,8 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddC
         entities.append(SolarNowSensor(coord))
     if coord.spare.sources.usable:
         entities.append(SpareSolarSensor(coord))
+    if coord.heat_pump.enabled:
+        entities.append(HeatPumpAdviceSensor(coord))
     for kind in ("any", "day", "night"):
         entities += [WindowStartSensor(coord, m, kind) for m in sorted(coord.data.windows)]
     remove_stale_entities(hass, entry.entry_id, "sensor", (e.unique_id for e in entities))
@@ -217,3 +221,30 @@ class SpareSolarSensor(_Base):
             "grid_sensor": d["grid_sensor"],
             "solar_sensors": d["solar_sensors"],
         }
+
+
+class HeatPumpAdviceSensor(_Base):
+    """boost / normal / hold_back. Your automation decides what each means for your heat pump."""
+
+    _attr_translation_key = "heat_pump_advice"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = [BOOST, NORMAL, HOLD_BACK]
+
+    def __init__(self, coord) -> None:
+        super().__init__(coord, "heat_pump_advice")
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, heat_pump_signal(self.coordinator.config_entry.entry_id), self.async_write_ha_state)
+        )
+
+    @property
+    def native_value(self):
+        return self.coordinator.heat_pump.mode
+
+    @property
+    def extra_state_attributes(self):
+        d = self.coordinator.heat_pump.as_dict()
+        return {k: d[k] for k in ("reason", "since", "price_now", "average_ahead", "cheapest_ahead",
+                                  "cheapest_at", "hours_ahead_known", "store_hours", "margin")}

@@ -595,3 +595,29 @@ async def test_spare_grid_override_mixes_with_energy_dashboard_solar(hass, talli
     await setup(hass, can_export=True, spare_grid_entity="sensor.grid_power", spare_grid_import_negative=True)
     spare = hass.states.get("sensor.watt_window_spare_solar_now_estimate")
     assert float(spare.state) == 700 and spare.attributes["solar_sensors"] == ["sensor.solar_power"]
+
+
+@pytest.mark.freeze_time("2026-09-22 01:00:00+00:00")  # cheap block 02-04 UTC is 1 h away
+async def test_heat_pump_advice_holds_back_then_boosts(hass, tallinn, nordpool, freezer):
+    assert await setup(hass) and hass.states.get("sensor.watt_window_heat_pump_advice") is None  # off by default
+    for e in hass.config_entries.async_entries("watt_window"):
+        await hass.config_entries.async_remove(e.entry_id)
+    await setup(hass, heat_pump_advice=True, heat_pump_min_minutes=0)
+    st = hass.states.get("sensor.watt_window_heat_pump_advice")
+    assert st.state == "hold_back" and st.attributes["cheapest_at"].startswith("2026-09-22T02:00")
+    freezer.tick(timedelta(hours=1, minutes=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    st = hass.states.get("sensor.watt_window_heat_pump_advice")
+    assert st.state == "boost", st.attributes
+
+
+@pytest.mark.freeze_time("2026-09-22 01:00:00+00:00")
+async def test_heat_pump_advice_waits_before_changing_mode(hass, tallinn, nordpool, freezer):
+    await setup(hass, heat_pump_advice=True, heat_pump_min_minutes=120)
+    assert hass.states.get("sensor.watt_window_heat_pump_advice").state == "hold_back"
+    freezer.tick(timedelta(hours=1, minutes=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    st = hass.states.get("sensor.watt_window_heat_pump_advice")
+    assert st.state == "hold_back" and "isn't switched too often" in st.attributes["reason"]

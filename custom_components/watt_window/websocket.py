@@ -19,6 +19,15 @@ from .const import (
     CONF_LOAD_W,
     CONF_PLANES,
     CONF_SOLAR_ENTRIES,
+    CONF_HP_ENABLED,
+    CONF_HP_MARGIN,
+    CONF_HP_MIN_MINUTES,
+    CONF_HP_POWER_W,
+    CONF_HP_STORE_HOURS,
+    DEFAULT_HP_MARGIN,
+    DEFAULT_HP_MIN_MINUTES,
+    DEFAULT_HP_POWER_W,
+    DEFAULT_HP_STORE_HOURS,
     CONF_SPARE_GRID_ENTITY,
     CONF_SPARE_GRID_IMPORT_NEGATIVE,
     CONF_SPARE_NEAR_ZERO_W,
@@ -123,6 +132,7 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
             },
             "warnings": data.warnings,
             "spare": coord.spare.as_dict(),
+            "heat_pump": coord.heat_pump.as_dict(),
             "quarters": [
                 {
                     "start": _iso(q.start),
@@ -165,6 +175,11 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
                 "solar_source": solar_source_kind(s),
                 "can_export": bool(s.get(CONF_CAN_EXPORT, True)),
                 "use_solar": bool(s.get(CONF_USE_SOLAR, True)),
+                "heat_pump_advice": bool(s.get(CONF_HP_ENABLED, False)),
+                "heat_pump_power_w": s.get(CONF_HP_POWER_W, DEFAULT_HP_POWER_W),
+                "heat_pump_store_hours": s.get(CONF_HP_STORE_HOURS, DEFAULT_HP_STORE_HOURS),
+                "heat_pump_margin": s.get(CONF_HP_MARGIN, DEFAULT_HP_MARGIN),
+                "heat_pump_min_minutes": s.get(CONF_HP_MIN_MINUTES, DEFAULT_HP_MIN_MINUTES),
                 "spare_grid_entity": s.get(CONF_SPARE_GRID_ENTITY),
                 "spare_grid_import_negative": bool(s.get(CONF_SPARE_GRID_IMPORT_NEGATIVE, False)),
                 "spare_solar_entity": s.get(CONF_SPARE_SOLAR_ENTITY),
@@ -195,6 +210,11 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
         vol.Optional("solar_source"): vol.In(SOLAR_SOURCES),
         vol.Optional("can_export"): bool,
         vol.Optional("use_solar"): bool,
+        vol.Optional("heat_pump_advice"): bool,
+        vol.Optional("heat_pump_power_w"): vol.Coerce(float),
+        vol.Optional("heat_pump_store_hours"): vol.Coerce(float),
+        vol.Optional("heat_pump_margin"): vol.Coerce(float),
+        vol.Optional("heat_pump_min_minutes"): vol.Coerce(float),
         vol.Optional("spare_grid_entity"): vol.Any(None, str),
         vol.Optional("spare_grid_import_negative"): bool,
         vol.Optional("spare_solar_entity"): vol.Any(None, str),
@@ -241,6 +261,8 @@ async def ws_save(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
         for key, lo, hi in (
             (CONF_SPARE_SMOOTH_MIN, 0, 60), (CONF_SPARE_ON_MIN, 0, 60),
             (CONF_SPARE_OFF_MIN, 0, 60), (CONF_SPARE_NEAR_ZERO_W, 0, 5000),
+            (CONF_HP_POWER_W, 100, 50000), (CONF_HP_STORE_HOURS, 1, 24),
+            (CONF_HP_MARGIN, 0, 1), (CONF_HP_MIN_MINUTES, 0, 240),
         ):
             if key in msg:
                 if not lo <= msg[key] <= hi:
@@ -251,6 +273,8 @@ async def ws_save(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
                 if msg[key] and hass.states.get(msg[key]) is None:
                     raise SettingsError("bad_spare_sensor", key)
                 options[key] = msg[key] or None
+        if "heat_pump_advice" in msg:
+            options[CONF_HP_ENABLED] = msg["heat_pump_advice"]
         if "spare_grid_import_negative" in msg:
             options[CONF_SPARE_GRID_IMPORT_NEGATIVE] = msg["spare_grid_import_negative"]
         if "use_solar" in msg:

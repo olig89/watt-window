@@ -102,6 +102,31 @@ Readings are averaged over 5 minutes; the on/off sensor waits 3 minutes before s
 
 It uses the **live power sensors from your Energy dashboard** (Settings, Dashboards, Energy: the grid and solar "power" sensors), so usually there's nothing to set up. You can pick other sensors on the Settings tab instead; if your grid meter shows importing as a negative number, tick the box that says so.
 
+## Heat pump advice
+
+Your house and hot-water tank can work like a battery: store heat when power is cheap or solar is spare, and let the house coast through the dear hours. Switch on **Give heat pump advice** on the Settings tab and Watt Window adds `sensor.watt_window_heat_pump_advice`:
+
+- **hold_back** when a stretch at least your margin cheaper (default 2 c/kWh) comes within the hours stored heat stays useful (default 4);
+- **boost** when there's spare solar right now, or now is at least that much cheaper than the hours ahead;
+- **normal** otherwise.
+
+It stays in a mode for at least 60 minutes by default, so the compressor isn't cycled. Watt Window never touches the heat pump: your automation decides what each state means.
+
+```yaml
+automation:
+  - alias: Heat pump follows Watt Window
+    triggers:
+      - trigger: state
+        entity_id: sensor.watt_window_heat_pump_advice
+    actions:
+      - action: climate.set_temperature
+        target:
+          entity_id: climate.heat_pump
+        data:
+          temperature: >
+            {{ {'boost': 22, 'normal': 21, 'hold_back': 20}[trigger.to_state.state] | default(21) }}
+```
+
 ## Home battery
 
 Setup asks whether you have a home battery (you can skip it), and there's a matching switch in Configure and on the Settings tab. It's saved but doesn't change anything yet. With a battery, spare solar can be stored for later instead of used straight away, which changes which window is cheapest. That logic comes in a later version. Leave it off for now.

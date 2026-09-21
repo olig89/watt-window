@@ -14,6 +14,7 @@ from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, NAME, PANEL_COMPONENT, PANEL_URL, STATIC_URL
 from .coordinator import WattWindowCoordinator
+from .advisor import HeatPumpAdvisor
 from .spare import SpareMonitor
 from .websocket import async_register_websocket
 
@@ -58,6 +59,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WattWindowConfigEntry) -
     coordinator.spare = SpareMonitor(hass, coordinator)
     await coordinator.spare.async_start()
     entry.async_on_unload(coordinator.spare.async_stop)
+    coordinator.heat_pump = HeatPumpAdvisor(hass, coordinator)
+    coordinator.heat_pump.async_start()
+    entry.async_on_unload(coordinator.heat_pump.async_stop)
 
     async def _tick(_now) -> None:
         await coordinator.async_refresh()

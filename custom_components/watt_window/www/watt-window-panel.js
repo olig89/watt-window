@@ -23,7 +23,7 @@ const RATE_KEYS = {
 const PLAN_NAMES = { flat: "One rate", day_night: "Day / night", vork5: "Day / night / winter peaks (Võrk 5)" };
 // Must match manifest.json (a test checks). Compared with the running integration
 // so a tab still holding old page code after an update says so.
-const PANEL_VERSION = "0.11.0";
+const PANEL_VERSION = "0.12.0";
 
 const DIRECTIONS = [
   [0, "North"], [45, "North-east"], [90, "East"], [135, "South-east"],
@@ -182,6 +182,7 @@ class WattWindowPanel extends HTMLElement {
           ${d.solar.configured ? `<div><div class="k">After solar</div><div class="v">${this._price(nowQ?.effective)}</div><div class="s">for a ${esc(d.settings.load_w)} W load</div></div>
           <div><div class="k">Solar forecast</div><div class="v">${nowQ ? (nowQ.solar_w / 1000).toFixed(1) : "–"} kW</div><div class="s">&nbsp;</div></div>` : ""}
           ${this._spareNow(d)}
+          ${this._heatPumpNow(d)}
         </div>
         <div class="meta">${this._horizon(d)} · ${solarLine}</div>
         ${d.warnings.map((w) => `<div class="meta bad">${esc(w)}</div>`).join("")}
@@ -255,6 +256,22 @@ class WattWindowPanel extends HTMLElement {
       <div class="v">${value}</div>
       <div class="s">${how}</div>
       <div class="s ${sp.enough ? "ok-text" : ""}">${sp.enough ? "Enough" : "Not enough"} for a ${esc(sp.appliance_w)} W appliance${sp.enough ? "" : " yet"}</div>
+    </div>`;
+  }
+
+  _heatPumpNow(d) {
+    const hp = d.heat_pump;
+    if (!hp || !hp.enabled || !hp.mode) return "";
+    const label = { boost: "Boost", normal: "Normal", hold_back: "Hold back" }[hp.mode] || hp.mode;
+    const icon = { boost: "mdi:arrow-up-bold-circle", normal: "mdi:minus-circle-outline", hold_back: "mdi:arrow-down-bold-circle" }[hp.mode];
+    let detail = "";
+    if (hp.mode === "hold_back" && hp.cheapest_at) detail = `Cheaper from ${this._when(hp.cheapest_at)} (${this._price(hp.cheapest_ahead)})`;
+    else if (hp.mode === "boost" && hp.average_ahead !== null) detail = `Now ${this._price(hp.price_now)} vs ${this._price(hp.average_ahead)} over the next ${hp.store_hours} h`;
+    return `<div class="spare hp hp-${hp.mode}">
+      <div class="k">Heat pump advice</div>
+      <div class="v"><ha-icon icon="${icon}"></ha-icon> ${label}</div>
+      <div class="s">${esc(hp.reason || "")}</div>
+      ${detail ? `<div class="s">${detail}</div>` : ""}
     </div>`;
   }
 
@@ -452,6 +469,11 @@ class WattWindowPanel extends HTMLElement {
         has_battery: !!s.has_battery,
         day_start: s.day_start,
         day_end: s.day_end,
+        heat_pump_advice: !!s.heat_pump_advice,
+        heat_pump_power_w: s.heat_pump_power_w,
+        heat_pump_store_hours: s.heat_pump_store_hours,
+        heat_pump_margin_c: +(s.heat_pump_margin * 100).toFixed(2),
+        heat_pump_min_minutes: s.heat_pump_min_minutes,
         spare_grid_entity: s.spare_grid_entity || "",
         spare_grid_import_negative: !!s.spare_grid_import_negative,
         spare_solar_entity: s.spare_solar_entity || "",
@@ -511,6 +533,18 @@ class WattWindowPanel extends HTMLElement {
       <div class="card">
         <h3>Spare solar now</h3>
         ${this._spareSettings(d, f)}
+      </div>
+      <div class="card">
+        <h3>Heat pump</h3>
+        <label class="check"><input type="checkbox" id="hpon" ${f.heat_pump_advice ? "checked" : ""}> Give heat pump advice</label>
+        <p class="s">Treats your house (or hot-water tank) like a battery: store heat when power is cheap or solar is spare, and let the house coast through dear hours. Watt Window only gives advice, as <code>sensor.watt_window_heat_pump_advice</code>: <b>boost</b>, <b>normal</b> or <b>hold back</b>. Your own automation decides what each means, for example +2 °C on the room target, a hot-water top-up, or −1 °C to coast.</p>
+        ${f.heat_pump_advice ? `<div class="grid">
+          <label>Heat pump power while running (W)<input type="number" min="100" step="100" data-hp="heat_pump_power_w" value="${f.heat_pump_power_w}"></label>
+          <label>Stored heat stays useful for (hours)<input type="number" min="1" max="24" step="0.5" data-hp="heat_pump_store_hours" value="${f.heat_pump_store_hours}"></label>
+          <label>Only shift for at least (c/kWh)<input type="number" min="0" max="100" step="0.5" data-hp="heat_pump_margin_c" value="${f.heat_pump_margin_c}"></label>
+          <label>Stay in a mode at least (minutes)<input type="number" min="0" max="240" step="5" data-hp="heat_pump_min_minutes" value="${f.heat_pump_min_minutes}"></label>
+        </div>
+        <p class="s"><b>Hold back</b> when a stretch at least that much cheaper comes within the hours heat stays useful. <b>Boost</b> when there's spare solar, or now is at least that much cheaper than the hours ahead. The minimum time in a mode protects the compressor from short cycling; ask your installer what it needs.</p>` : ""}
       </div>
       <div class="card">
         <h3>Home battery</h3>
@@ -669,6 +703,9 @@ class WattWindowPanel extends HTMLElement {
     }
     $("[data-sp]").forEach((i) => i.addEventListener("change", () => { f[i.dataset.sp] = i.value; this._render(); }));
     $("[data-spn]").forEach((i) => i.addEventListener("change", () => (f[i.dataset.spn] = Number(i.value))));
+    const hpOn = this.shadowRoot.getElementById("hpon");
+    if (hpOn) hpOn.addEventListener("change", () => { f.heat_pump_advice = hpOn.checked; this._render(); });
+    $("[data-hp]").forEach((i) => i.addEventListener("change", () => (f[i.dataset.hp] = Number(i.value))));
     const spareNeg = this.shadowRoot.getElementById("spareneg");
     if (spareNeg) spareNeg.addEventListener("change", () => (f.spare_grid_import_negative = spareNeg.checked));
     const canExport = this.shadowRoot.getElementById("canexport");
@@ -698,6 +735,11 @@ class WattWindowPanel extends HTMLElement {
         has_battery: this._draft.has_battery,
         day_start: this._draft.day_start,
         day_end: this._draft.day_end,
+        heat_pump_advice: this._draft.heat_pump_advice,
+        heat_pump_power_w: this._draft.heat_pump_power_w,
+        heat_pump_store_hours: this._draft.heat_pump_store_hours,
+        heat_pump_margin: this._draft.heat_pump_margin_c / 100,
+        heat_pump_min_minutes: this._draft.heat_pump_min_minutes,
         spare_grid_entity: this._draft.spare_grid_entity || null,
         spare_solar_entity: this._draft.spare_solar_entity || null,
         spare_grid_import_negative: this._draft.spare_grid_import_negative,
@@ -793,6 +835,9 @@ const STYLES = `
   .chartinfo { margin-top:4px; }
   .spare { border-left:1px solid var(--divider-color); padding-left:20px; max-width:320px; }
   .est { display:inline-block; font-size:11px; padding:0 6px; border-radius:8px; background: var(--warning-color, #f57c00); color:#fff; vertical-align:middle; margin-left:4px; }
+  .hp .v ha-icon { --mdc-icon-size: 24px; vertical-align: -3px; }
+  .hp-boost .v { color: var(--success-color, #43a047); }
+  .hp-hold_back .v { color: var(--warning-color, #f57c00); }
   .ok-text { color: var(--success-color, #43a047); font-weight:500; }
   code { font-size:12px; background: var(--secondary-background-color); padding:1px 4px; border-radius:4px; }
   .dayslider { position:relative; height:44px; margin:10px 10px 0; }

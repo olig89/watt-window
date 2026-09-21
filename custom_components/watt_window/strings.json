@@ -215,6 +215,14 @@
       },
       "spare_solar": {
         "name": "Spare solar now (estimate)"
+      },
+      "heat_pump_advice": {
+        "name": "Heat pump advice",
+        "state": {
+          "boost": "Boost",
+          "normal": "Normal",
+          "hold_back": "Hold back"
+        }
       }
     },
     "binary_sensor": {
