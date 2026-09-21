@@ -1,7 +1,7 @@
 {
   "domain": "watt_window",
   "name": "Watt Window",
-  "after_dependencies": ["forecast_solar", "frontend", "nordpool", "panel_custom"],
+  "after_dependencies": ["energy", "forecast_solar", "frontend", "nordpool", "panel_custom"],
   "codeowners": ["@olig89"],
   "config_flow": true,
   "dependencies": ["http", "websocket_api"],
@@ -11,5 +11,5 @@
   "issue_tracker": "https://github.com/olig89/watt-window/issues",
   "requirements": ["holidays>=0.50"],
   "single_config_entry": true,
-  "version": "0.10.0"
+  "version": "0.11.0"
 }

@@ -10,12 +10,14 @@ from homeassistant.components.sensor import (
 from homeassistant.const import UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .cleanup import remove_stale_entities
 from .const import CONF_BASE_LOAD_W, CONF_LOAD_W, DEFAULT_BASE_LOAD_W, DEFAULT_LOAD_W, DOMAIN, NAME, window_label
 from .coordinator import WattWindowCoordinator
+from .spare import signal as spare_signal
 
 
 def device_info(entry_id: str) -> DeviceInfo:
@@ -32,6 +34,8 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddC
     entities: list[SensorEntity] = [ImportPriceSensor(coord), ExportPriceSensor(coord), EffectivePriceSensor(coord)]
     if coord.data.solar_configured:
         entities.append(SolarNowSensor(coord))
+    if coord.spare.sources.usable:
+        entities.append(SpareSolarSensor(coord))
     for kind in ("any", "day", "night"):
         entities += [WindowStartSensor(coord, m, kind) for m in sorted(coord.data.windows)]
     remove_stale_entities(hass, entry.entry_id, "sensor", (e.unique_id for e in entities))
@@ -175,4 +179,41 @@ class WindowStartSensor(_Base):
             "period_end": span[1].isoformat() if span else None,
             # False while part of the period has no published prices: it may still move.
             "settled": self.coordinator.settled(self._kind, self._minutes),
+        }
+
+
+class SpareSolarSensor(_Base):
+    """Spare solar right now, in watts. Often an estimate: see the 'basis' attribute."""
+
+    _attr_translation_key = "spare_solar"
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+
+    def __init__(self, coord) -> None:
+        super().__init__(coord, "spare_solar")
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, spare_signal(self.coordinator.config_entry.entry_id), self.async_write_ha_state)
+        )
+
+    @property
+    def native_value(self):
+        e = self.coordinator.spare.estimate
+        return None if e is None or e.watts is None else round(e.watts)
+
+    @property
+    def extra_state_attributes(self):
+        d = self.coordinator.spare.as_dict()
+        return {
+            "basis": d["basis"],
+            "is_estimate": d["is_estimate"],
+            "held_back": d["held_back"],
+            "grid_power_w": d["grid_w"],
+            "solar_power_w": d["solar_w"],
+            "forecast_w": d["forecast_w"],
+            "grid_sensor": d["grid_sensor"],
+            "solar_sensors": d["solar_sensors"],
         }

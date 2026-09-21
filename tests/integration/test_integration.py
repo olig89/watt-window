@@ -508,3 +508,90 @@ async def test_switching_solar_off_changes_the_watt_windows(hass, tallinn, nordp
     data = (await ws.receive_json())["result"]
     assert data["settings"]["use_solar"] is False and data["solar"]["paused"] is True
     assert entry.data["solar_entry_id"] == forecast_solar.entry_id  # the solar setup itself is kept
+
+
+async def set_power(hass, grid, solar):
+    hass.states.async_set("sensor.grid_power", str(grid), {"unit_of_measurement": "W", "device_class": "power"})
+    hass.states.async_set("sensor.solar_power", str(solar), {"unit_of_measurement": "kW", "device_class": "power"})
+    await hass.async_block_till_done()
+
+
+@pytest.mark.freeze_time("2026-09-21 10:30:00+00:00")  # inside the fake 4 kW forecast
+async def test_spare_solar_on_a_zero_export_system(hass, tallinn, nordpool, forecast_solar, freezer):
+    # Oli's meter: negative = import. Held back: grid about zero, panels 2.3 kW (reported in kW).
+    await set_power(hass, -60, 2.3)
+    await setup(hass, solar_entry_id=forecast_solar.entry_id, can_export=False, load_w=1000,
+                spare_grid_entity="sensor.grid_power", spare_grid_import_negative=True,
+                spare_solar_entity="sensor.solar_power")
+    spare = hass.states.get("sensor.watt_window_spare_solar_now_estimate")
+    assert float(spare.state) == pytest.approx(4000 - 2300)
+    assert spare.attributes["basis"] == "forecast_minus_production" and spare.attributes["is_estimate"]
+    enough = hass.states.get("binary_sensor.watt_window_spare_solar_for_your_appliance")
+    assert enough.state == "off"  # not yet: needs 3 minutes
+    freezer.tick(timedelta(minutes=3, seconds=30))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert hass.states.get("binary_sensor.watt_window_spare_solar_for_your_appliance").state == "on"
+
+    # A cloud: the house starts importing. Smoothed over 5 minutes and 5 minutes to go off.
+    await set_power(hass, -900, 0.6)
+    freezer.tick(timedelta(minutes=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert hass.states.get("binary_sensor.watt_window_spare_solar_for_your_appliance").state == "on"
+    freezer.tick(timedelta(minutes=10))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert hass.states.get("binary_sensor.watt_window_spare_solar_for_your_appliance").state == "off"
+    spare = hass.states.get("sensor.watt_window_spare_solar_now_estimate")
+    assert float(spare.state) == 0 and spare.attributes["basis"] == "importing"
+
+
+@pytest.mark.freeze_time("2026-09-21 10:30:00+00:00")
+async def test_spare_solar_uses_the_energy_dashboard_sensors(hass, tallinn, nordpool, hass_ws_client):
+    from homeassistant.components.energy.data import async_get_manager
+
+    manager = await async_get_manager(hass)
+    await manager.async_update({
+        "energy_sources": [
+            {"type": "grid", "stat_energy_from": "sensor.grid_energy", "stat_energy_to": None, "stat_cost": None,
+             "stat_compensation": None, "entity_energy_price": None, "number_energy_price": None,
+             "entity_energy_price_export": None, "number_energy_price_export": None,
+             "cost_adjustment_day": 0, "stat_rate": "sensor.grid_power"},
+            {"type": "solar", "stat_energy_from": "sensor.solar_energy", "config_entry_solar_forecast": None,
+             "stat_rate": "sensor.solar_power"},
+        ],
+    })
+    # Energy dashboard convention: grid power positive = import. Exporting 1.5 kW here.
+    await set_power(hass, -1500, 4.0)
+    await setup(hass, can_export=True)
+    spare = hass.states.get("sensor.watt_window_spare_solar_now_estimate")
+    assert float(spare.state) == 1500 and spare.attributes["basis"] == "measured_export"
+    assert not spare.attributes["is_estimate"]
+    ws = await hass_ws_client(hass)
+    await ws.send_json({"id": 1, "type": "watt_window/data"})
+    data = (await ws.receive_json())["result"]
+    assert data["spare"]["origin"] == "energy_dashboard"
+    assert {"entity_id": "sensor.grid_power", "name": "sensor.grid_power"} in data["settings"]["power_sensors"]
+
+
+@pytest.mark.freeze_time("2026-09-21 10:30:00+00:00")
+async def test_no_power_sensors_no_spare_entities(hass, tallinn, nordpool):
+    await setup(hass)
+    assert hass.states.get("sensor.watt_window_spare_solar_now_estimate") is None
+    assert hass.states.get("binary_sensor.watt_window_spare_solar_for_your_appliance") is None
+
+
+@pytest.mark.freeze_time("2026-09-21 10:30:00+00:00")
+async def test_spare_grid_override_mixes_with_energy_dashboard_solar(hass, tallinn, nordpool):
+    from homeassistant.components.energy.data import async_get_manager
+
+    manager = await async_get_manager(hass)
+    await manager.async_update({"energy_sources": [
+        {"type": "solar", "stat_energy_from": "sensor.solar_energy", "config_entry_solar_forecast": None,
+         "stat_rate": "sensor.solar_power"},
+    ]})
+    await set_power(hass, 700, 3.0)  # raw meter, negative = import: +700 W is EXPORT
+    await setup(hass, can_export=True, spare_grid_entity="sensor.grid_power", spare_grid_import_negative=True)
+    spare = hass.states.get("sensor.watt_window_spare_solar_now_estimate")
+    assert float(spare.state) == 700 and spare.attributes["solar_sensors"] == ["sensor.solar_power"]

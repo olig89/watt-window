@@ -14,6 +14,7 @@ from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, NAME, PANEL_COMPONENT, PANEL_URL, STATIC_URL
 from .coordinator import WattWindowCoordinator
+from .spare import SpareMonitor
 from .websocket import async_register_websocket
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,6 +55,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: WattWindowConfigEntry) -
     coordinator = WattWindowCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
+    coordinator.spare = SpareMonitor(hass, coordinator)
+    await coordinator.spare.async_start()
+    entry.async_on_unload(coordinator.spare.async_stop)
 
     async def _tick(_now) -> None:
         await coordinator.async_refresh()

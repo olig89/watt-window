@@ -86,6 +86,22 @@ automation:
           entity_id: input_boolean.dishwasher_loaded
 ```
 
+## Spare solar now
+
+Watt Windows plan ahead from forecasts. **Spare solar now** watches what's actually happening, and tells you when there's solar to spare right now:
+
+- `sensor.watt_window_spare_solar_now_estimate`: spare solar in watts.
+- `binary_sensor.watt_window_spare_solar_for_your_appliance`: on when the spare covers your appliance's watts (Settings, Cost estimates).
+
+How it knows depends on your system:
+
+- **If spare power goes to the grid**, the spare is simply what's going out: measured.
+- **If your inverter holds the panels back instead** ("zero export"), the spare never shows up in any reading, because the panels only ever make what the house uses. What does show is the grid sitting at about zero while the panels produce: they're being held back. How much more they could make is an **estimate**: the solar forecast for right now minus what they're actually making. The sensor's `basis` and `is_estimate` attributes always say which it is, and the page marks it "estimate".
+
+Readings are averaged over 5 minutes; the on/off sensor waits 3 minutes before switching on and 5 before switching off, so a passing cloud doesn't flick it. All adjustable on the Settings tab.
+
+It uses the **live power sensors from your Energy dashboard** (Settings, Dashboards, Energy: the grid and solar "power" sensors), so usually there's nothing to set up. You can pick other sensors on the Settings tab instead; if your grid meter shows importing as a negative number, tick the box that says so.
+
 ## Home battery
 
 Setup asks whether you have a home battery (you can skip it), and there's a matching switch in Configure and on the Settings tab. It's saved but doesn't change anything yet. With a battery, spare solar can be stored for later instead of used straight away, which changes which window is cheapest. That logic comes in a later version. Leave it off for now.

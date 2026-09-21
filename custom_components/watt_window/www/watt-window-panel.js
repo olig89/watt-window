@@ -23,7 +23,7 @@ const RATE_KEYS = {
 const PLAN_NAMES = { flat: "One rate", day_night: "Day / night", vork5: "Day / night / winter peaks (Võrk 5)" };
 // Must match manifest.json (a test checks). Compared with the running integration
 // so a tab still holding old page code after an update says so.
-const PANEL_VERSION = "0.10.0";
+const PANEL_VERSION = "0.11.0";
 
 const DIRECTIONS = [
   [0, "North"], [45, "North-east"], [90, "East"], [135, "South-east"],
@@ -181,6 +181,7 @@ class WattWindowPanel extends HTMLElement {
           <div><div class="k">Price now</div><div class="v">${this._price(nowQ?.import)}</div><div class="s">${esc(PERIOD_NAMES[nowQ?.period] || "")}</div></div>
           ${d.solar.configured ? `<div><div class="k">After solar</div><div class="v">${this._price(nowQ?.effective)}</div><div class="s">for a ${esc(d.settings.load_w)} W load</div></div>
           <div><div class="k">Solar forecast</div><div class="v">${nowQ ? (nowQ.solar_w / 1000).toFixed(1) : "–"} kW</div><div class="s">&nbsp;</div></div>` : ""}
+          ${this._spareNow(d)}
         </div>
         <div class="meta">${this._horizon(d)} · ${solarLine}</div>
         ${d.warnings.map((w) => `<div class="meta bad">${esc(w)}</div>`).join("")}
@@ -233,6 +234,28 @@ class WattWindowPanel extends HTMLElement {
           <ha-icon icon="mdi:home-battery"></ha-icon><span>Battery</span>
           <input type="checkbox" role="switch" disabled aria-label="Battery (coming later)"></label>`;
     return solar + battery;
+  }
+
+  _spareNow(d) {
+    const sp = d.spare;
+    if (!sp || !sp.available) return "";
+    const kw = (w) => `${(w / 1000).toFixed(1)} kW`;
+    const how = {
+      forecast_minus_production: "Estimate: your panels are being held back; forecast minus what they're making",
+      held_back_amount_unknown: "Your panels are being held back, but there's no solar forecast to say by how much",
+      measured_export: "Measured: what's going to the grid",
+      importing: "None: the house is drawing from the grid",
+      no_solar: "None: the panels are idle",
+    }[sp.basis] || "Waiting for readings";
+    let value = "–";
+    if (sp.watts !== null && sp.watts !== undefined) value = `${sp.is_estimate ? "~" : ""}${kw(sp.watts)}`;
+    else if (sp.basis === "held_back_amount_unknown") value = "Some";
+    return `<div class="spare">
+      <div class="k">Spare solar now ${sp.is_estimate || sp.basis === "held_back_amount_unknown" ? `<span class="est" title="A guess from the solar forecast, not a measurement">estimate</span>` : ""}</div>
+      <div class="v">${value}</div>
+      <div class="s">${how}</div>
+      <div class="s ${sp.enough ? "ok-text" : ""}">${sp.enough ? "Enough" : "Not enough"} for a ${esc(sp.appliance_w)} W appliance${sp.enough ? "" : " yet"}</div>
+    </div>`;
   }
 
   _horizon(d) {
@@ -429,6 +452,13 @@ class WattWindowPanel extends HTMLElement {
         has_battery: !!s.has_battery,
         day_start: s.day_start,
         day_end: s.day_end,
+        spare_grid_entity: s.spare_grid_entity || "",
+        spare_grid_import_negative: !!s.spare_grid_import_negative,
+        spare_solar_entity: s.spare_solar_entity || "",
+        spare_smoothing_minutes: s.spare_smoothing_minutes,
+        spare_on_after_minutes: s.spare_on_after_minutes,
+        spare_off_after_minutes: s.spare_off_after_minutes,
+        spare_near_zero_w: s.spare_near_zero_w,
         solar_entry_ids: [...(s.solar_entry_ids || [])],
         solar_source: s.solar_source || "none",
         can_export: s.can_export !== false,
@@ -479,6 +509,10 @@ class WattWindowPanel extends HTMLElement {
         <p class="s">Your panels power the house first; only what's left over makes a Watt Window cheaper. If unsure, leave 500 W.</p>
       </div>
       <div class="card">
+        <h3>Spare solar now</h3>
+        ${this._spareSettings(d, f)}
+      </div>
+      <div class="card">
         <h3>Home battery</h3>
         <label class="check"><input type="checkbox" id="battery" ${f.has_battery ? "checked" : ""}> I have a home battery</label>
         <p class="s">Saved, but it doesn't change anything yet. Battery-aware Watt Windows (storing spare solar for later instead of using it straight away) come in a later version.</p>
@@ -503,6 +537,31 @@ class WattWindowPanel extends HTMLElement {
         </div>
       </div>
       <div class="actions"><button class="btn primary" id="save" ${this._saving ? "disabled" : ""}>${this._saving ? "Saving…" : "Save"}</button></div>`;
+  }
+
+  _spareSettings(d, f) {
+    const sp = d.spare || {};
+    const opts = (sel) => `<option value="">Use the Energy dashboard's</option>`
+      + (d.settings.power_sensors || []).map((o) => `<option value="${esc(o.entity_id)}" ${o.entity_id === sel ? "selected" : ""}>${esc(o.name)}</option>`).join("");
+    const origin = sp.origin === "energy_dashboard"
+      ? `Using your Energy dashboard's live power sensors: grid <code>${esc(sp.grid_sensor)}</code>, solar <code>${esc((sp.solar_sensors || []).join(", "))}</code>.`
+      : sp.origin === "settings"
+        ? `Using: grid <code>${esc(sp.grid_sensor)}</code>, solar <code>${esc((sp.solar_sensors || []).join(", "))}</code> (anything not picked below comes from the Energy dashboard).`
+        : `No live power sensors found. Set grid and solar power in the Energy dashboard, or pick them below.`;
+    return `<p class="s">Watches your grid and solar power as they change, and says when there's spare solar to use now, with an on/off sensor for "enough for your appliance". On a system that sends spare power to the grid, the spare is measured. On one that holds the panels back instead, it's an <b>estimate</b>: the solar forecast minus what the panels are making, while the grid sits at about zero.</p>
+      <p class="s">${origin}</p>
+      <div class="grid">
+        <label>Grid power sensor<select data-sp="spare_grid_entity">${opts(f.spare_grid_entity)}</select></label>
+        <label>Solar power sensor<select data-sp="spare_solar_entity">${opts(f.spare_solar_entity)}</select></label>
+      </div>
+      ${f.spare_grid_entity ? `<label class="check" style="margin-top:8px"><input type="checkbox" id="spareneg" ${f.spare_grid_import_negative ? "checked" : ""}> This meter shows importing as a negative number</label>` : ""}
+      <div class="grid" style="margin-top:12px">
+        <label>Smooth readings over (minutes)<input type="number" min="0" max="60" step="1" data-spn="spare_smoothing_minutes" value="${f.spare_smoothing_minutes}"></label>
+        <label>Switch on after (minutes)<input type="number" min="0" max="60" step="1" data-spn="spare_on_after_minutes" value="${f.spare_on_after_minutes}"></label>
+        <label>Switch off after (minutes)<input type="number" min="0" max="60" step="1" data-spn="spare_off_after_minutes" value="${f.spare_off_after_minutes}"></label>
+        <label>Grid counts as "about zero" within (W)<input type="number" min="0" max="5000" step="10" data-spn="spare_near_zero_w" value="${f.spare_near_zero_w}"></label>
+      </div>
+      <p class="s">Switching off more slowly than on stops a passing cloud flicking it. The appliance watts are under Cost estimates.</p>`;
   }
 
   _daySlider(f) {
@@ -608,6 +667,10 @@ class WattWindowPanel extends HTMLElement {
       ds.addEventListener("input", () => sync(ds));
       de.addEventListener("input", () => sync(de));
     }
+    $("[data-sp]").forEach((i) => i.addEventListener("change", () => { f[i.dataset.sp] = i.value; this._render(); }));
+    $("[data-spn]").forEach((i) => i.addEventListener("change", () => (f[i.dataset.spn] = Number(i.value))));
+    const spareNeg = this.shadowRoot.getElementById("spareneg");
+    if (spareNeg) spareNeg.addEventListener("change", () => (f.spare_grid_import_negative = spareNeg.checked));
     const canExport = this.shadowRoot.getElementById("canexport");
     if (canExport) canExport.addEventListener("change", (e) => (f.can_export = e.target.checked));
     const addPlane = this.shadowRoot.getElementById("addplane");
@@ -635,6 +698,13 @@ class WattWindowPanel extends HTMLElement {
         has_battery: this._draft.has_battery,
         day_start: this._draft.day_start,
         day_end: this._draft.day_end,
+        spare_grid_entity: this._draft.spare_grid_entity || null,
+        spare_solar_entity: this._draft.spare_solar_entity || null,
+        spare_grid_import_negative: this._draft.spare_grid_import_negative,
+        spare_smoothing_minutes: this._draft.spare_smoothing_minutes,
+        spare_on_after_minutes: this._draft.spare_on_after_minutes,
+        spare_off_after_minutes: this._draft.spare_off_after_minutes,
+        spare_near_zero_w: this._draft.spare_near_zero_w,
         solar_entry_ids: this._draft.solar_entry_ids,
         solar_source: this._draft.solar_source,
         can_export: this._draft.can_export,
@@ -721,6 +791,10 @@ const STYLES = `
   .srcswitch input[type=checkbox]:disabled { opacity:.5; }
   .srcswitch input[type=checkbox]:focus-visible { outline:2px solid var(--primary-color); outline-offset:3px; }
   .chartinfo { margin-top:4px; }
+  .spare { border-left:1px solid var(--divider-color); padding-left:20px; max-width:320px; }
+  .est { display:inline-block; font-size:11px; padding:0 6px; border-radius:8px; background: var(--warning-color, #f57c00); color:#fff; vertical-align:middle; margin-left:4px; }
+  .ok-text { color: var(--success-color, #43a047); font-weight:500; }
+  code { font-size:12px; background: var(--secondary-background-color); padding:1px 4px; border-radius:4px; }
   .dayslider { position:relative; height:44px; margin:10px 10px 0; }
   .dayslider .track { position:absolute; left:0; right:0; top:14px; height:10px; border-radius:5px; background: #37474f; opacity:.75; }
   .dayslider .dayband { position:absolute; top:0; bottom:0; left:var(--a); width:calc(var(--b) - var(--a)); background:#fbc02d; border-radius:5px; }

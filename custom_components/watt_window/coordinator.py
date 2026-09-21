@@ -64,6 +64,7 @@ class WattWindowData:
     solar_title: str | None = None
     solar_credit: str | None = None
     solar_paused: bool = False  # set up, but switched off on the page
+    solar_forecast: dict[datetime, float] = field(default_factory=dict)  # W per quarter, always
     periods: dict[str, dict[int, tuple[datetime, datetime] | None]] = field(default_factory=dict)
 
     def window(self, kind: str, minutes: int) -> Window | None:
@@ -132,8 +133,12 @@ class WattWindowCoordinator(DataUpdateCoordinator[WattWindowData]):
         holidays = await self._holiday_dates(s.get(CONF_COUNTRY) or "", years) if s.get(CONF_COUNTRY) else set()
 
         warnings: list[str] = []
-        solar = solar_source(self.hass, s, self._solar_cache) if s.get(CONF_USE_SOLAR, True) else None
-        solar_w = await solar.async_watts(now) if solar else None
+        # The forecast is fetched whenever solar is set up: spare-solar-now uses it
+        # even while the Solar switch keeps it out of the Watt Windows.
+        solar_src = solar_source(self.hass, s, self._solar_cache)
+        forecast_w = await solar_src.async_watts(now) if solar_src else None
+        solar = solar_src if s.get(CONF_USE_SOLAR, True) else None
+        solar_w = forecast_w if solar else None
         if solar:
             warnings += solar.warnings
             if solar_w is None:
@@ -187,6 +192,7 @@ class WattWindowCoordinator(DataUpdateCoordinator[WattWindowData]):
             solar_title=solar.title if solar else None,
             solar_credit=solar.credit if solar else None,
             solar_paused=not s.get(CONF_USE_SOLAR, True) and solar_source_kind(s) != "none",
+            solar_forecast=forecast_w or {},
         )
 
     def settled(self, kind: str, minutes: int) -> bool:

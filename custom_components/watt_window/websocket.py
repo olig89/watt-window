@@ -19,6 +19,17 @@ from .const import (
     CONF_LOAD_W,
     CONF_PLANES,
     CONF_SOLAR_ENTRIES,
+    CONF_SPARE_GRID_ENTITY,
+    CONF_SPARE_GRID_IMPORT_NEGATIVE,
+    CONF_SPARE_NEAR_ZERO_W,
+    CONF_SPARE_OFF_MIN,
+    CONF_SPARE_ON_MIN,
+    CONF_SPARE_SMOOTH_MIN,
+    CONF_SPARE_SOLAR_ENTITY,
+    DEFAULT_SPARE_NEAR_ZERO_W,
+    DEFAULT_SPARE_OFF_MIN,
+    DEFAULT_SPARE_ON_MIN,
+    DEFAULT_SPARE_SMOOTH_MIN,
     CONF_SOLAR_SOURCE,
     CONF_TARIFF,
     CONF_USE_SOLAR,
@@ -47,6 +58,15 @@ def async_register_websocket(hass: HomeAssistant) -> None:
 def _entry(hass: HomeAssistant):
     entries = hass.config_entries.async_loaded_entries(DOMAIN)
     return entries[0] if entries else None
+
+
+def _power_sensors(hass: HomeAssistant) -> list[dict]:
+    """Live power sensors (W/kW) the user can pick for spare solar."""
+    out = []
+    for st in hass.states.async_all("sensor"):
+        if st.attributes.get("device_class") == "power" or st.attributes.get("unit_of_measurement") in ("W", "kW"):
+            out.append({"entity_id": st.entity_id, "name": st.attributes.get("friendly_name") or st.entity_id})
+    return sorted(out, key=lambda o: o["name"].lower())
 
 
 def _iso(t) -> str | None:
@@ -102,6 +122,7 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
                 "paused": data.solar_paused,
             },
             "warnings": data.warnings,
+            "spare": coord.spare.as_dict(),
             "quarters": [
                 {
                     "start": _iso(q.start),
@@ -144,6 +165,14 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
                 "solar_source": solar_source_kind(s),
                 "can_export": bool(s.get(CONF_CAN_EXPORT, True)),
                 "use_solar": bool(s.get(CONF_USE_SOLAR, True)),
+                "spare_grid_entity": s.get(CONF_SPARE_GRID_ENTITY),
+                "spare_grid_import_negative": bool(s.get(CONF_SPARE_GRID_IMPORT_NEGATIVE, False)),
+                "spare_solar_entity": s.get(CONF_SPARE_SOLAR_ENTITY),
+                "spare_smoothing_minutes": s.get(CONF_SPARE_SMOOTH_MIN, DEFAULT_SPARE_SMOOTH_MIN),
+                "spare_on_after_minutes": s.get(CONF_SPARE_ON_MIN, DEFAULT_SPARE_ON_MIN),
+                "spare_off_after_minutes": s.get(CONF_SPARE_OFF_MIN, DEFAULT_SPARE_OFF_MIN),
+                "spare_near_zero_w": s.get(CONF_SPARE_NEAR_ZERO_W, DEFAULT_SPARE_NEAR_ZERO_W),
+                "power_sensors": _power_sensors(hass),
                 "solar_planes": s.get(CONF_PLANES) or [],
                 "solar_entry_ids": chosen,
                 "solar_options": solar_options,
@@ -166,6 +195,13 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
         vol.Optional("solar_source"): vol.In(SOLAR_SOURCES),
         vol.Optional("can_export"): bool,
         vol.Optional("use_solar"): bool,
+        vol.Optional("spare_grid_entity"): vol.Any(None, str),
+        vol.Optional("spare_grid_import_negative"): bool,
+        vol.Optional("spare_solar_entity"): vol.Any(None, str),
+        vol.Optional("spare_smoothing_minutes"): vol.Coerce(float),
+        vol.Optional("spare_on_after_minutes"): vol.Coerce(float),
+        vol.Optional("spare_off_after_minutes"): vol.Coerce(float),
+        vol.Optional("spare_near_zero_w"): vol.Coerce(float),
         vol.Optional("solar_planes"): [dict],
     }
 )
@@ -202,6 +238,21 @@ async def ws_save(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
             if any(i not in known for i in ids):
                 raise SettingsError("bad_solar")
             options[CONF_SOLAR_ENTRIES] = ids
+        for key, lo, hi in (
+            (CONF_SPARE_SMOOTH_MIN, 0, 60), (CONF_SPARE_ON_MIN, 0, 60),
+            (CONF_SPARE_OFF_MIN, 0, 60), (CONF_SPARE_NEAR_ZERO_W, 0, 5000),
+        ):
+            if key in msg:
+                if not lo <= msg[key] <= hi:
+                    raise SettingsError("bad_spare", key)
+                options[key] = msg[key]
+        for key in (CONF_SPARE_GRID_ENTITY, CONF_SPARE_SOLAR_ENTITY):
+            if key in msg:
+                if msg[key] and hass.states.get(msg[key]) is None:
+                    raise SettingsError("bad_spare_sensor", key)
+                options[key] = msg[key] or None
+        if "spare_grid_import_negative" in msg:
+            options[CONF_SPARE_GRID_IMPORT_NEGATIVE] = msg["spare_grid_import_negative"]
         if "use_solar" in msg:
             options[CONF_USE_SOLAR] = msg["use_solar"]
         if "can_export" in msg:

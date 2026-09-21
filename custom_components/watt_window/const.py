@@ -17,6 +17,14 @@ CONF_SOLAR_SOURCE = "solar_source"  # none | open_meteo | forecast_solar
 CONF_USE_SOLAR = "use_solar"
 CONF_CAN_EXPORT = "can_export"  # False: spare solar is throttled away, so using it is free
 CONF_PLANES = "solar_planes"  # [{name, kwp, tilt, direction}] for open_meteo
+# Spare solar now. Sensors default to the Energy dashboard's live power sensors.
+CONF_SPARE_GRID_ENTITY = "spare_grid_entity"
+CONF_SPARE_GRID_IMPORT_NEGATIVE = "spare_grid_import_negative"
+CONF_SPARE_SOLAR_ENTITY = "spare_solar_entity"
+CONF_SPARE_SMOOTH_MIN = "spare_smoothing_minutes"
+CONF_SPARE_ON_MIN = "spare_on_after_minutes"
+CONF_SPARE_OFF_MIN = "spare_off_after_minutes"
+CONF_SPARE_NEAR_ZERO_W = "spare_near_zero_w"
 CONF_DAY_START = "day_window_start"  # local hour the "daytime" windows start
 CONF_DAY_END = "day_window_end"
 CONF_BASE_LOAD_W = "base_load_w"
@@ -29,6 +37,10 @@ DEFAULT_WINDOWS = [60, 120, 240]
 DEFAULT_BASE_LOAD_W = 500
 DEFAULT_LOAD_W = 1000
 DEFAULT_DAY_START = 8
+DEFAULT_SPARE_SMOOTH_MIN = 5  # average readings over this long
+DEFAULT_SPARE_ON_MIN = 3  # spare must last this long before switching on
+DEFAULT_SPARE_OFF_MIN = 5  # and be gone this long before switching off (clouds pass)
+DEFAULT_SPARE_NEAR_ZERO_W = 150  # grid within this counts as 'about zero'
 DEFAULT_DAY_END = 20
 MAX_WINDOW_MINUTES = 24 * 60
 

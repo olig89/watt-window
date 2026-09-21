@@ -212,6 +212,9 @@
       },
       "window_start_night": {
         "name": "Cheapest overnight {length} window"
+      },
+      "spare_solar": {
+        "name": "Spare solar now (estimate)"
       }
     },
     "binary_sensor": {
@@ -223,6 +226,9 @@
       },
       "in_window_night": {
         "name": "In cheapest overnight {length} window"
+      },
+      "spare_solar_enough": {
+        "name": "Spare solar for your appliance"
       }
     }
   }
