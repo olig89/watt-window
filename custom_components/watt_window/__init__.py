@@ -49,13 +49,57 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
         module_url=f"{STATIC_URL}/watt-window-panel.js?v={version}",
         require_admin=True,
     )
-    # The dashboard card loads on every dashboard, so no resource needs adding by hand.
-    from homeassistant.components.frontend import add_extra_js_url
-
     card = await hass.async_add_executor_job((www / "watt-window-card.js").stat)
     card_url = f"{STATIC_URL}/watt-window-card.js?v={card.st_mtime_ns}"
-    add_extra_js_url(hass, card_url)
+    await _async_register_card(hass, card_url)
     hass.data[f"{DOMAIN}_panel"] = card_url
+
+
+def _card_resources(hass: HomeAssistant):
+    """The dashboards' resource list, or None where it is kept in YAML."""
+    from homeassistant.components.lovelace.const import LOVELACE_DATA
+
+    lovelace = hass.data.get(LOVELACE_DATA)
+    resources = getattr(lovelace, "resources", None)
+    return resources if hasattr(resources, "async_create_item") else None
+
+
+async def _async_register_card(hass: HomeAssistant, url: str) -> None:
+    """Add the dashboard card as a dashboard resource, so no one adds it by hand.
+
+    A resource, not an extra frontend module: dashboards wait for resources before
+    building cards, but an extra module can arrive after the card was built, and
+    then the card shows a configuration error until the page is reloaded.
+    """
+    resources = _card_resources(hass)
+    if resources is None:
+        # Resources kept in YAML: an extra module is the best we can do here.
+        from homeassistant.components.frontend import add_extra_js_url
+
+        add_extra_js_url(hass, url)
+        return
+    await resources.async_get_info()  # loads the stored list
+    path = url.split("?")[0]
+    for item in resources.async_items():
+        if item.get("url", "").split("?")[0] == path:
+            if item["url"] != url:
+                await resources.async_update_item(item["id"], {"res_type": "module", "url": url})
+            return
+    await resources.async_create_item({"res_type": "module", "url": url})
+
+
+async def _async_remove_card(hass: HomeAssistant, url: str) -> None:
+    resources = _card_resources(hass)
+    if resources is None:
+        from homeassistant.components.frontend import remove_extra_js_url
+
+        remove_extra_js_url(hass, url)
+        return
+    await resources.async_get_info()
+    path = url.split("?")[0]
+    for item in list(resources.async_items()):
+        if item.get("url", "").split("?")[0] == path:
+            await resources.async_delete_item(item["id"])
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: WattWindowConfigEntry) -> bool:
@@ -95,4 +139,4 @@ async def async_remove_entry(hass: HomeAssistant, entry: WattWindowConfigEntry) 
         from homeassistant.components import frontend
 
         frontend.async_remove_panel(hass, PANEL_URL)
-        frontend.remove_extra_js_url(hass, card_url)
+        await _async_remove_card(hass, card_url)

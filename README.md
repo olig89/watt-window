@@ -51,7 +51,7 @@ To change the tariff type (for example moving from a flat rate to day/night) or 
 
 ## Dashboard card
 
-Watt Window brings its own card, so there is no resource to add: edit a dashboard, add a card and pick **Watt Window** (or add `type: custom:watt-window-card` in YAML). It shows the published prices from an hour ago onwards, with a lane per Watt Window and a line under the chart with each one's start time and average price, so the household can see when to start the dishwasher or the washing machine.
+Watt Window brings its own card and adds it to your dashboard resources itself (if you keep resources in YAML, add `/watt_window_static/watt-window-card.js` as a `module` resource). To use it, edit a dashboard, add a card and pick **Watt Window** (or add `type: custom:watt-window-card` in YAML). It shows the published prices from an hour ago onwards, with a lane per Watt Window and a line under the chart with each one's start time and average price, so the household can see when to start the dishwasher or the washing machine.
 
 ```yaml
 type: custom:watt-window-card

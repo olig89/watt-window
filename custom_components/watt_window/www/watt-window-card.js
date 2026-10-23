@@ -17,7 +17,7 @@
 // colors: ["#2e7d32", "#1565c0"]      lane colours, in order
 // bar_color: "#555"                   price bars (default: theme primary colour)
 
-const CARD_VERSION = "0.13.0";
+const CARD_VERSION = "0.13.1";
 const COLOURS = ["#2e7d32", "#1565c0", "#ef6c00", "#6a1b9a", "#00838f", "#ad1457", "#5d4037"];
 const PERIODS = { any: null, daytime: "day", overnight: "night" };
 const PERIOD_WORDS = { any: "", daytime: "daytime", overnight: "overnight" };
