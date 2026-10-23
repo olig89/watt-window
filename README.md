@@ -49,6 +49,29 @@ HACS shows an update when a new release is published. Download it and restart Ho
 
 To change the tariff type (for example moving from a flat rate to day/night) or the solar forecast, use **Settings → Devices & services → Watt Window → Configure**.
 
+## Dashboard card
+
+Watt Window brings its own card, so there is no resource to add: edit a dashboard, add a card and pick **Watt Window** (or add `type: custom:watt-window-card` in YAML). It shows the published prices from an hour ago onwards, with a lane per Watt Window and a line under the chart with each one's start time and average price, so the household can see when to start the dishwasher or the washing machine.
+
+```yaml
+type: custom:watt-window-card
+title: Best times to run       # "" hides the header
+windows:                       # leave out for every Watt Window length
+  - 120                        # cheapest 2 hours at any time
+  - minutes: 120
+    period: overnight          # any (default), daytime or overnight
+    name: Dishwasher           # lane label instead of "2 h"
+hours_back: 1                  # past hours kept on the chart
+hours_ahead: 24                # leave out for every published price
+chart_height: 110              # price plot height in px
+show_solar: true               # solar forecast behind the prices
+show_list: true                # the lines under the chart
+colors: ["#2e7d32", "#1565c0"] # lane colours, in order
+bar_color: "#555555"           # price bars (default: the theme's primary colour)
+```
+
+On a colour e-ink screen rendered through the Puppet app, pick colours from the screen's own palette (for Spectra 6: `#000000`, `#0000FF`, `#00FF00`, `#FF0000`, `#FFFF00`) so bars and lanes come out solid instead of dithered.
+
 ## Entities
 
 | Entity | What it is |

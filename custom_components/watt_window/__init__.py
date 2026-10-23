@@ -49,7 +49,13 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
         module_url=f"{STATIC_URL}/watt-window-panel.js?v={version}",
         require_admin=True,
     )
-    hass.data[f"{DOMAIN}_panel"] = True
+    # The dashboard card loads on every dashboard, so no resource needs adding by hand.
+    from homeassistant.components.frontend import add_extra_js_url
+
+    card = await hass.async_add_executor_job((www / "watt-window-card.js").stat)
+    card_url = f"{STATIC_URL}/watt-window-card.js?v={card.st_mtime_ns}"
+    add_extra_js_url(hass, card_url)
+    hass.data[f"{DOMAIN}_panel"] = card_url
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: WattWindowConfigEntry) -> bool:
@@ -85,7 +91,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: WattWindowConfigEntry) 
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: WattWindowConfigEntry) -> None:
-    if hass.data.pop(f"{DOMAIN}_panel", None):
+    if card_url := hass.data.pop(f"{DOMAIN}_panel", None):
         from homeassistant.components import frontend
 
         frontend.async_remove_panel(hass, PANEL_URL)
+        frontend.remove_extra_js_url(hass, card_url)

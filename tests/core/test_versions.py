@@ -12,3 +12,10 @@ def test_panel_version_matches_manifest():
     js = (ROOT / "www" / "watt-window-panel.js").read_text(encoding="utf-8")
     panel = re.search(r'const PANEL_VERSION = "([^"]+)"', js).group(1)
     assert panel == manifest["version"]
+
+
+def test_card_version_matches_manifest():
+    manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
+    js = (ROOT / "www" / "watt-window-card.js").read_text(encoding="utf-8")
+    card = re.search(r'const CARD_VERSION = "([^"]+)"', js).group(1)
+    assert card == manifest["version"]
