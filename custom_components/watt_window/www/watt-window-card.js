@@ -13,8 +13,10 @@
 //     period: overnight                any (default) / daytime / overnight
 //     color: "#5b8fd1"
 // Lengths Watt Window isn't set up for are worked out here, from the same prices.
-// hours_back: 1                        past hours left on the chart
-// hours_ahead: 36                      cap on future hours (default: every published price)
+// day_start: "07:00"                   show a fixed day from this time (today's, or yesterday's before it)
+// day_hours: 24                        how long that day is; lanes only look inside it
+// hours_back: 1                        without day_start: past hours left on the chart
+// hours_ahead: 36                      without day_start: cap on future hours (default: every published price)
 // chart_height: 110                    price plot height in px
 // bar_minutes: 60                      minutes per bar (15 for every quarter-hour)
 // history_days: 30                     how far back "cheap" and "pricey" are judged
@@ -22,7 +24,7 @@
 // lane_labels: times                   times (after each lane) or none
 // show_legend: true
 
-const CARD_VERSION = "0.15.0";
+const CARD_VERSION = "0.16.0";
 const LANE_COLOUR = "#5b8fd1";
 const BANDS = {
   solar: "#f7cf45",
@@ -168,11 +170,40 @@ class WattWindowCard extends HTMLElement {
     return "usual";
   }
 
+  // ms of hh:mm on the local (Home Assistant time zone) date of ms
+  _localTime(ms, hh, mm) {
+    const tz = this._tz;
+    const [y, m, day] = new Date(ms).toLocaleDateString("en-CA", { timeZone: tz }).split("-").map(Number);
+    const guess = Date.UTC(y, m - 1, day, hh, mm);
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+      timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+    }).formatToParts(new Date(guess)).map((p) => [p.type, p.value]));
+    const asLocal = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute);
+    return guess - (asLocal - guess);
+  }
+
+  // The fixed day the chart shows, when day_start is set: from the latest day_start up to now.
+  _span(d) {
+    const start = this._config.day_start;
+    if (!start) return null;
+    const [hh, mm] = String(start).split(":").map(Number);
+    const now = new Date(d.now).getTime();
+    let from = this._localTime(now, hh, mm || 0);
+    if (from > now) from = this._localTime(now - 86400000, hh, mm || 0);
+    const hours = Number(this._config.day_hours ?? 24);
+    // a whole day ends at the next day_start, so the clock change days stay 07:00 to 07:00
+    const to = hours === 24 ? this._localTime(from + 26 * HOUR, hh, mm || 0) : from + hours * HOUR;
+    return { from, to };
+  }
+
   // The cheapest run of quarters of this length from the current quarter on, like Watt Window's own.
-  _cheapest(d, minutes) {
+  _cheapest(d, minutes, until = Infinity) {
     const n = Math.max(1, Math.round(minutes / 15));
     const from = Math.floor(new Date(d.now).getTime() / QUARTER) * QUARTER;
-    const qs = d.quarters.filter((q) => new Date(q.start).getTime() >= from);
+    const qs = d.quarters.filter((q) => {
+      const t = new Date(q.start).getTime();
+      return t >= from && t + QUARTER <= until;
+    });
     const avgs = [];
     let best = null;
     for (let i = 0; i + n <= qs.length; i++) {
@@ -197,7 +228,7 @@ class WattWindowCard extends HTMLElement {
   }
 
   // The lanes asked for, each resolved to its window (or null while prices are short).
-  _lanes(d) {
+  _lanes(d, span) {
     const wanted = this._config.windows ?? d.windows.map((w) => w.minutes);
     return wanted.map((item, i) => {
       const spec = typeof item === "object" ? item : { minutes: item };
@@ -206,6 +237,8 @@ class WattWindowCard extends HTMLElement {
       const length = d.windows.find((w) => w.minutes === minutes);
       let win;
       if (PERIODS[period]) win = length ? length[PERIODS[period]] : null;
+      // a fixed day: the cheapest start inside it, even when Watt Window's own window is later
+      else if (span) win = this._cheapest(d, minutes, span.to);
       else win = length ? (length.start ? length : null) : this._cheapest(d, minutes);
       const hours = minutes / 60;
       return {
@@ -227,7 +260,10 @@ class WattWindowCard extends HTMLElement {
     if (this._error) body = `<div class="msg bad">Couldn't load Watt Window: ${esc(this._error)}</div>`;
     else if (!d) body = `<div class="msg">Loading…</div>`;
     else if (!d.quarters.length) body = `<div class="msg">No prices yet.</div>`;
-    else body = this._chart(d, this._lanes(d));
+    else {
+      const span = this._span(d);
+      body = this._chart(d, this._lanes(d, span), span);
+    }
     this.shadowRoot.innerHTML = `
       <style>${STYLES}</style>
       <ha-card>
@@ -236,14 +272,14 @@ class WattWindowCard extends HTMLElement {
       </ha-card>`;
   }
 
-  _chart(d, lanes) {
+  _chart(d, lanes, span) {
     const now = new Date(d.now).getTime();
     const back = Number(this._config.hours_back ?? 1) * HOUR;
     const ahead = this._config.hours_ahead != null ? Number(this._config.hours_ahead) * HOUR : Infinity;
     const step = Math.max(15, Number(this._config.bar_minutes ?? 60)) * 60000;
     const qs = d.quarters.filter((q) => {
       const t = new Date(q.start).getTime();
-      return t + QUARTER > now - back && t < now + ahead;
+      return span ? t >= span.from && t < span.to : t + QUARTER > now - back && t < now + ahead;
     });
     if (!qs.length) return `<div class="msg">No prices ahead yet.</div>`;
     const colours = { ...BANDS, ...(this._config.band_colors || {}) };
@@ -267,8 +303,8 @@ class WattWindowCard extends HTMLElement {
     const plotH = Number(this._config.chart_height ?? 110);
     const H = top + plotH + axisH;
     const plotW = W - left - right;
-    const t0 = bars[0].t;
-    const t1 = bars[bars.length - 1].end;
+    const t0 = span ? span.from : bars[0].t;
+    const t1 = span ? span.to : bars[bars.length - 1].end;
     const x = (t) => left + ((Math.min(Math.max(t, t0), t1) - t0) / (t1 - t0)) * plotW;
     const maxP = Math.max(0.01, ...bars.map((b) => b.imp));
     const y = (p) => top + plotH - (Math.max(0, p) / maxP) * plotH;
@@ -300,10 +336,19 @@ class WattWindowCard extends HTMLElement {
       }
       if (hh % hourStep === 0) svg += `<text x="${x(t)}" y="${top + plotH + 13}" text-anchor="middle" class="ax">${String(hh).padStart(2, "0")}</text>`;
     }
+    // hours of the fixed day without prices yet: an outlined gap, labelled below in HTML (it carries an icon)
+    const known = bars[bars.length - 1].end;
+    let waiting = "";
+    if (span && known < t1 - HOUR) {
+      svg += `<rect x="${x(known) + 2}" y="${top + 2}" width="${x(t1) - x(known) - 4}" height="${plotH - 2}" rx="6" class="gap"/>`;
+      const due = d.next_prices_at && new Date(d.next_prices_at).getTime() > now ? `Prices at ${this._time(d.next_prices_at)}` : "Prices soon";
+      waiting = `<div class="waiting" style="left:${(x(known) / W) * 100}%;width:${((x(t1) - x(known)) / W) * 100}%;top:${top}px;height:${plotH}px">
+        <ha-icon icon="mdi:timer-sand"></ha-icon><span>${due}</span></div>`;
+    }
     if (now >= t0 && now <= t1) {
       svg += `<line x1="${x(now)}" x2="${x(now)}" y1="${top}" y2="${top + plotH}" class="now"/>`;
     }
-    const chart = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Electricity price per hour, coloured from cheap to dear compared with recent weeks">${svg}</svg>`;
+    const chart = `<div class="plot"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Electricity price per hour, coloured from cheap to dear compared with recent weeks">${svg}</svg>${waiting}</div>`;
 
     // lanes in HTML, so they can carry Home Assistant icons; same x scale as the chart
     const pct = (t) => ((x(t) - left) / plotW) * 100;
@@ -345,6 +390,10 @@ const STYLES = `
   .ax.day { font-weight:600; fill: var(--primary-text-color); }
   .grid { stroke: var(--divider-color); stroke-width:1; stroke-dasharray:1 3; shape-rendering:crispEdges; }
   .midnight { stroke: var(--secondary-text-color); stroke-width:1; stroke-dasharray:3 3; shape-rendering:crispEdges; }
+  .gap { fill:none; stroke: var(--secondary-text-color); stroke-width:1.5; stroke-dasharray:4 4; }
+  .plot { position:relative; }
+  .waiting { position:absolute; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; text-align:center; font-size:13px; font-weight:500; color: var(--primary-text-color); }
+  .waiting ha-icon { --mdc-icon-size:28px; }
   .now { stroke: var(--error-color, #e53935); stroke-width:2; shape-rendering:crispEdges; }
   .msg { font-size:14px; color: var(--secondary-text-color); padding: 8px 4px; }
   .bad { color: var(--error-color); }

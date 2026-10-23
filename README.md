@@ -65,8 +65,10 @@ windows:                        # leave out for every Watt Window length
     name: Dishwasher
     period: overnight           # any (default), daytime or overnight (lengths set up in Watt Window only)
     color: "#5b8fd1"
-hours_back: 1                   # past hours kept on the chart
-hours_ahead: 24                 # leave out for every published price
+day_start: "07:00"              # show a fixed day from 07:00 to 07:00 (leave out for a rolling view)
+day_hours: 24                   # length of that day; lanes only look inside it
+hours_back: 1                   # rolling view: past hours kept on the chart
+hours_ahead: 24                 # rolling view: leave out for every published price
 chart_height: 110               # price plot height in px
 bar_minutes: 60                 # 15 for a bar per quarter-hour
 history_days: 30                # how far back cheap and dear are judged
@@ -76,7 +78,7 @@ lane_labels: times              # or none
 show_legend: true
 ```
 
-Until there are three days of price history the colours compare the published prices with each other instead.
+With `day_start`, hours of that day without prices yet show an outline and when the next prices arrive. Until there are three days of price history the colours compare the published prices with each other instead.
 
 On a colour e-ink screen rendered through the Puppet app the soft colours come out dithered, which reads well from a distance. A theme with a pure white background and black text keeps the rest of the page from speckling.
 
