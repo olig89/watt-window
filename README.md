@@ -51,26 +51,34 @@ To change the tariff type (for example moving from a flat rate to day/night) or 
 
 ## Dashboard card
 
-Watt Window brings its own card and adds it to your dashboard resources itself (if you keep resources in YAML, add `/watt_window_static/watt-window-card.js` as a `module` resource). To use it, edit a dashboard, add a card and pick **Watt Window** (or add `type: custom:watt-window-card` in YAML). It shows the published prices from an hour ago onwards, with a lane per Watt Window and a line under the chart with each one's start time and average price, so the household can see when to start the dishwasher or the washing machine.
+Watt Window brings its own card and adds it to your dashboard resources itself (if you keep resources in YAML, add `/watt_window_static/watt-window-card.js` as a `module` resource). To use it, edit a dashboard, add a card and pick **Watt Window** (or add `type: custom:watt-window-card` in YAML).
+
+It shows a bar per hour of published prices, coloured by how that hour compares with your last 30 days: yellow where your solar covers it, then green (the cheapest quarter of hours), blue (usual), apricot (the dearest quarter) and coral (the dearest tenth). Under the chart is a lane per appliance with its cheapest start, its end and its average price, so anyone in the house can see when to start the dishwasher or the washing machine.
 
 ```yaml
 type: custom:watt-window-card
-title: Best times to run       # "" hides the header
-windows:                       # leave out for every Watt Window length
-  - 120                        # cheapest 2 hours at any time
-  - minutes: 120
-    period: overnight          # any (default), daytime or overnight
-    name: Dishwasher           # lane label instead of "2 h"
-hours_back: 1                  # past hours kept on the chart
-hours_ahead: 24                # leave out for every published price
-chart_height: 110              # price plot height in px
-show_solar: true               # solar forecast behind the prices
-show_list: true                # the lines under the chart
-colors: ["#2e7d32", "#1565c0"] # lane colours, in order
-bar_color: "#555555"           # price bars (default: the theme's primary colour)
+title: Cheapest time to start   # "" hides the header
+windows:                        # leave out for every Watt Window length
+  - 120                         # cheapest 2 hours at any time
+  - minutes: 210                # a length Watt Window isn't set up for is worked out by the card
+    icon: mdi:dishwasher        # shown instead of the length
+    name: Dishwasher
+    period: overnight           # any (default), daytime or overnight (lengths set up in Watt Window only)
+    color: "#5b8fd1"
+hours_back: 1                   # past hours kept on the chart
+hours_ahead: 24                 # leave out for every published price
+chart_height: 110               # price plot height in px
+bar_minutes: 60                 # 15 for a bar per quarter-hour
+history_days: 30                # how far back cheap and dear are judged
+band_colors:                    # any of solar, cheap, usual, pricey, dearest
+  usual: "#a9c6e8"
+lane_labels: times              # or none
+show_legend: true
 ```
 
-On a colour e-ink screen rendered through the Puppet app, pick colours from the screen's own palette (for Spectra 6: `#000000`, `#0000FF`, `#00FF00`, `#FF0000`, `#FFFF00`) so bars and lanes come out solid instead of dithered.
+Until there are three days of price history the colours compare the published prices with each other instead.
+
+On a colour e-ink screen rendered through the Puppet app the soft colours come out dithered, which reads well from a distance. A theme with a pure white background and black text keeps the rest of the page from speckling.
 
 ## Entities
 
