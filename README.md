@@ -53,7 +53,7 @@ To change the tariff type (for example moving from a flat rate to day/night) or 
 
 Watt Window brings its own card and adds it to your dashboard resources itself (if you keep resources in YAML, add `/watt_window_static/watt-window-card.js` as a `module` resource). To use it, edit a dashboard, add a card and pick **Watt Window** (or add `type: custom:watt-window-card` in YAML).
 
-It shows a bar per hour of published prices, coloured by how that hour compares with your last 30 days: yellow where your solar covers it, then green (the cheapest quarter of hours), blue (usual), apricot (the dearest quarter) and coral (the dearest tenth). Under the chart is a lane per appliance with its cheapest start, its end and its average price, so anyone in the house can see when to start the dishwasher or the washing machine.
+It shows a bar per hour of published prices, coloured by how that hour compares with your last 30 days: yellow where it's cheap thanks to solar (your panels are forecast to cover most of the load), then green (the cheapest quarter of hours), blue (usual), apricot (the dearest quarter) and coral (the dearest tenth). Under the chart is a lane per appliance with its cheapest start, its end and its average price, so anyone in the house can see when to start the dishwasher or the washing machine.
 
 ```yaml
 type: custom:watt-window-card
