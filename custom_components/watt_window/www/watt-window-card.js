@@ -21,10 +21,11 @@
 // bar_minutes: 60                      minutes per bar (15 for every quarter-hour)
 // history_days: 30                     how far back "cheap" and "pricey" are judged
 // band_colors: {solar, cheap, usual, pricey, dearest}
+// grid_line_color: "#d18b00"           line marking the grid price over a solar hour
 // lane_labels: times                   times (after each lane) or none
 // show_legend: true
 
-const CARD_VERSION = "0.17.0";
+const CARD_VERSION = "0.17.1";
 const LANE_COLOUR = "#5b8fd1";
 const BANDS = {
   solar: "#f7cf45",
@@ -33,6 +34,8 @@ const BANDS = {
   pricey: "#f2a07b",
   dearest: "#e2725b",
 };
+// the grid price over a solar hour's bar: darker than the solar colour so it shows on white
+const GRID_LINE = "#d18b00";
 const BAND_WORDS = { solar: "cheap thanks to solar", cheap: "cheap", usual: "usual", pricey: "pricey", dearest: "dearest" };
 const PERIODS = { any: null, daytime: "day", overnight: "night" };
 const QUARTER = 900000;
@@ -327,9 +330,9 @@ class WattWindowCard extends HTMLElement {
       const fill = esc(colours[b.band]);
       const past = b.end <= now ? ` opacity="0.45"` : "";
       if (b.band === "solar") {
-        // pale: the grid price; solid: the estimate with forecast solar covering part of the load
-        svg += `<path d="${barPath(bx, bw, b.imp, 1)}" class="ghost" fill="${fill}" stroke="${fill}"${past}/>`;
+        // solid: the estimate with forecast solar covering part of the load; cap line: the grid price
         svg += `<path d="${barPath(bx, bw, b.eff, 3)}" fill="${fill}"${past}/>`;
+        svg += `<line x1="${bx}" x2="${bx + bw}" y1="${y(b.imp)}" y2="${y(b.imp)}" class="cap" stroke="${esc(this._config.grid_line_color ?? GRID_LINE)}"${past}/>`;
       } else {
         svg += `<path d="${barPath(bx, bw, b.imp, 1)}" fill="${fill}"${past}/>`;
       }
@@ -385,7 +388,7 @@ class WattWindowCard extends HTMLElement {
     const inLegend = Object.keys(BANDS).filter((k) => k !== "solar" || bars.some((b) => b.band === "solar"));
     const legend = this._config.show_legend === false ? "" :
       `<div class="lg">${inLegend.map((k) => `<span><i style="${k === "solar"
-        ? `background:linear-gradient(to top, ${esc(colours[k])} 50%, transparent 50%);box-shadow:inset 0 0 0 1px ${esc(colours[k])}`
+        ? `background:linear-gradient(to top, ${esc(colours[k])} 55%, transparent 55%);border-top:2px solid ${esc(this._config.grid_line_color ?? GRID_LINE)};box-sizing:border-box`
         : `background:${esc(colours[k])}`}"></i>${BAND_WORDS[k]}</span>`).join("")}</div>`;
     return chart + `<div class="lanes" style="--gutter:${(left / W) * 100}%;--right:${(right / W) * 100}%">${rows.join("")}</div>` + legend;
   }
@@ -400,7 +403,7 @@ const STYLES = `
   svg { display:block; width:100%; height:auto; }
   .ax { font-size:11px; fill: var(--secondary-text-color); }
   .ax.day { font-weight:600; fill: var(--primary-text-color); }
-  .ghost { fill-opacity:0.3; stroke-width:1.5; }
+  .cap { stroke-width:3; stroke-linecap:round; }
   .grid { stroke: var(--divider-color); stroke-width:1; stroke-dasharray:1 3; shape-rendering:crispEdges; }
   .midnight { stroke: var(--secondary-text-color); stroke-width:1; stroke-dasharray:3 3; shape-rendering:crispEdges; }
   .gap { fill:none; stroke: var(--secondary-text-color); stroke-width:1.5; stroke-dasharray:4 4; }

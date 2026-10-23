@@ -23,7 +23,7 @@ const RATE_KEYS = {
 const PLAN_NAMES = { flat: "One rate", day_night: "Day / night", vork5: "Day / night / winter peaks (Võrk 5)" };
 // Must match manifest.json (a test checks). Compared with the running integration
 // so a tab still holding old page code after an update says so.
-const PANEL_VERSION = "0.17.0";
+const PANEL_VERSION = "0.17.1";
 
 const DIRECTIONS = [
   [0, "North"], [45, "North-east"], [90, "East"], [135, "South-east"],
@@ -53,6 +53,7 @@ const WINDOW_COLOURS = ["#2e7d32", "#1565c0", "#ef6c00", "#6a1b9a", "#00838f", "
 // How good a price is, judged against the last 30 days (same colours as the dashboard card).
 const BANDS = { solar: "#f7cf45", cheap: "#7fc79a", usual: "#a9c6e8", pricey: "#f2a07b", dearest: "#e2725b" };
 const BAND_WORDS = { solar: "Cheap thanks to solar", cheap: "Cheap", usual: "Usual", pricey: "Pricey", dearest: "Dearest" };
+const GRID_LINE = "#d18b00"; // the grid price over a solar quarter's bar
 const HISTORY_DAYS = 30;
 const quantile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(p * (sorted.length - 1))))];
 
@@ -259,7 +260,7 @@ class WattWindowPanel extends HTMLElement {
         ${this._chart(d)}
         <div class="legend">
           ${Object.keys(BANDS).filter((k) => k !== "solar" || d.solar.configured).map((k) => `<span><i class="sw" style="${k === "solar"
-            ? `background:linear-gradient(to top, ${BANDS[k]} 50%, transparent 50%);box-shadow:inset 0 0 0 1px ${BANDS[k]}`
+            ? `background:linear-gradient(to top, ${BANDS[k]} 55%, transparent 55%);border-top:2px solid ${GRID_LINE};box-sizing:border-box`
             : `background:${BANDS[k]}`}"></i>${BAND_WORDS[k]}</span>`).join("")}
           ${d.solar.configured ? `<span><i class="sw sunline"></i>Solar forecast</span>` : ""}
           <span class="muted">${this._history ? `Compared with your last ${HISTORY_DAYS} days` : "Compared with the prices published so far"}${d.solar.paused ? " · grid only: solar is switched off" : ""}</span>
@@ -268,7 +269,7 @@ class WattWindowPanel extends HTMLElement {
         <p class="explain lanes-note">The coloured lanes under the chart are your Watt Windows, one lane per length. A paler tail means you could start later for the same price. Tap a lane to shade that Watt Window on the chart.</p>
         <p class="explain"><b>Why the chart stops where it does:</b> ${esc(d.price_source)} sets tomorrow's prices once a day, at an auction that closes at noon Central European time; they're published about 45 minutes later${d.next_prices_at ? ` (${this._when(d.next_prices_at)} your time)` : ""}. Before that, nobody knows prices beyond midnight CET, so the furthest anyone can see is roughly a day and a half, and some mornings less than a day.</p>
         ${d.solar.credit ? `<p class="explain credit">Solar estimate: ${esc(d.solar.credit)}.</p>` : ""}
-        <p class="explain">Each bar is the grid price of one quarter-hour: ${esc(d.price_source)} spot plus your network rate, fees and VAT. Its colour says how that price compares with the hours of your last ${HISTORY_DAYS} days: cheap is the cheapest quarter of them, pricey the dearest quarter and dearest the dearest tenth. Where your solar is forecast to take a noticeable share off a ${esc(d.settings.load_w)} W load, the bar is yellow: the pale outline is the grid price, the solid part the estimated price with solar.
+        <p class="explain">Each bar is the grid price of one quarter-hour: ${esc(d.price_source)} spot plus your network rate, fees and VAT. Its colour says how that price compares with the hours of your last ${HISTORY_DAYS} days: cheap is the cheapest quarter of them, pricey the dearest quarter and dearest the dearest tenth. Where your solar is forecast to take a noticeable share off a ${esc(d.settings.load_w)} W load, the bar is yellow and shows the estimated price with solar; the line above it marks the grid price.
         ${d.solar.configured ? (d.settings.can_export
         ? "Where your panels are forecast to produce more than your typical house load, the spare output covers the load first, so that part only costs the export price you'd otherwise have earned."
         : "Where your panels are forecast to produce more than your typical house load, the spare output covers the load first. Your system doesn't export, so that spare power would otherwise be lost: using it is free.") : ""}
@@ -436,10 +437,10 @@ class WattWindowPanel extends HTMLElement {
       const band = this._band(q, th);
       const op = past ? 0.35 : 1;
       if (band === "solar") {
-        // pale: the grid price; solid: the estimate with forecast solar covering part of the load
+        // solid: the estimate with forecast solar covering part of the load; line: the grid price
         const ye = Math.min(y(q.effective), y0 - 2);
-        svg += `<rect x="${x(t)}" y="${Math.min(y0, y1)}" width="${bw}" height="${Math.max(0.5, Math.abs(y1 - y0))}" fill="${BANDS.solar}" fill-opacity="${0.3 * op}" stroke="${BANDS.solar}" stroke-opacity="${op}"/>`;
         svg += `<rect x="${x(t)}" y="${ye}" width="${bw}" height="${y0 - ye}" fill="${BANDS.solar}" opacity="${op}"/>`;
+        svg += `<line x1="${x(t)}" x2="${x(t) + bw}" y1="${y1}" y2="${y1}" stroke="${GRID_LINE}" stroke-width="2.5" opacity="${op}"/>`;
       } else {
         svg += `<rect x="${x(t)}" y="${Math.min(y0, y1)}" width="${bw}" height="${Math.max(0.5, Math.abs(y1 - y0))}" fill="${BANDS[band]}" opacity="${op}"/>`;
       }
