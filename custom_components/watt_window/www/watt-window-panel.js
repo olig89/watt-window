@@ -23,7 +23,7 @@ const RATE_KEYS = {
 const PLAN_NAMES = { flat: "One rate", day_night: "Day / night", vork5: "Day / night / winter peaks (Võrk 5)" };
 // Must match manifest.json (a test checks). Compared with the running integration
 // so a tab still holding old page code after an update says so.
-const PANEL_VERSION = "0.17.1";
+const PANEL_VERSION = "0.17.2";
 
 const DIRECTIONS = [
   [0, "North"], [45, "North-east"], [90, "East"], [135, "South-east"],
@@ -52,7 +52,7 @@ function compassName(deg) {
 const WINDOW_COLOURS = ["#2e7d32", "#1565c0", "#ef6c00", "#6a1b9a", "#00838f", "#ad1457", "#5d4037"];
 // How good a price is, judged against the last 30 days (same colours as the dashboard card).
 const BANDS = { solar: "#f7cf45", cheap: "#7fc79a", usual: "#a9c6e8", pricey: "#f2a07b", dearest: "#e2725b" };
-const BAND_WORDS = { solar: "Cheap thanks to solar", cheap: "Cheap", usual: "Usual", pricey: "Pricey", dearest: "Dearest" };
+const BAND_WORDS = { solar: "Cheaper because of solar", cheap: "Cheap", usual: "Usual", pricey: "Pricey", dearest: "Dearest" };
 const GRID_LINE = "#d18b00"; // the grid price over a solar quarter's bar
 const HISTORY_DAYS = 30;
 const quantile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(p * (sorted.length - 1))))];

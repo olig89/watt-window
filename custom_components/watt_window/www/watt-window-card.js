@@ -25,7 +25,7 @@
 // lane_labels: times                   times (after each lane) or none
 // show_legend: true
 
-const CARD_VERSION = "0.17.1";
+const CARD_VERSION = "0.17.2";
 const LANE_COLOUR = "#5b8fd1";
 const BANDS = {
   solar: "#f7cf45",
@@ -36,7 +36,7 @@ const BANDS = {
 };
 // the grid price over a solar hour's bar: darker than the solar colour so it shows on white
 const GRID_LINE = "#d18b00";
-const BAND_WORDS = { solar: "cheap thanks to solar", cheap: "cheap", usual: "usual", pricey: "pricey", dearest: "dearest" };
+const BAND_WORDS = { solar: "cheaper because of solar", cheap: "cheap", usual: "usual", pricey: "pricey", dearest: "dearest" };
 const PERIODS = { any: null, daytime: "day", overnight: "night" };
 const QUARTER = 900000;
 const HOUR = 3600000;
