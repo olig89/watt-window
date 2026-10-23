@@ -44,7 +44,7 @@ HACS shows an update when a new release is published. Download it and restart Ho
 
 ## The sidebar page
 
-- **Overview:** the price now; a **Solar** switch next to the Watt Windows heading (turn it off and the Watt Windows, their sensors and the chart all use grid prices only, while your solar setup is kept; a Battery switch sits beside it for later); a card per Watt Window length with its start time, what waiting for it saves against starting now (for your appliance's watts), its daytime (sun) and overnight (moon) versions, and details you can fold away; and a chart of every published price, coloured by how it compares with your last 30 days (yellow where your solar covers the load, then cheap, usual and pricey), with the solar forecast as a line, a lane per Watt Window underneath and its explanation behind the same fold-out button.
+- **Overview:** the price now; a **Solar** switch next to the Watt Windows heading (turn it off and the Watt Windows, their sensors and the chart all use grid prices only, while your solar setup is kept; a Battery switch sits beside it for later); a card per Watt Window length with its start time, what waiting for it saves against starting now (for your appliance's watts), its daytime (sun) and overnight (moon) versions, and details you can fold away; and a chart of every published price, coloured by how it compares with your last 30 days (yellow where your solar covers the load, then cheaper, usual and dearer), with the solar forecast as a line, a lane per Watt Window underneath and its explanation behind the same fold-out button.
 - **Settings:** window lengths, your day hours (a slider with a handle for when the day starts and one for when it ends), your solar setup, home battery, appliance watts, and your tariff rates. Changes apply straight away.
 
 To change the tariff type (for example moving from a flat rate to day/night) or the solar forecast, use **Settings → Devices & services → Watt Window → Configure**.
@@ -53,7 +53,7 @@ To change the tariff type (for example moving from a flat rate to day/night) or 
 
 Watt Window brings its own card and adds it to your dashboard resources itself (if you keep resources in YAML, add `/watt_window_static/watt-window-card.js` as a `module` resource). To use it, edit a dashboard, add a card and pick **Watt Window** (or add `type: custom:watt-window-card` in YAML).
 
-It shows a bar per hour of published prices, coloured by how that hour compares with your last 30 days: yellow where it's cheaper because of solar (a solid bar for the estimated price once your forecast solar covers part of the load, with a line above it at the grid price), then green (the cheapest quarter of hours), blue (usual) and coral (pricey: the dearest quarter). Under the chart is a lane per appliance with its cheapest start, its end and its average price, so anyone in the house can see when to start the dishwasher or the washing machine.
+It shows a bar per hour of published prices, coloured by how that hour compares with your last 30 days: yellow where it's cheaper because of solar (a solid bar for the estimated price once your forecast solar covers part of the load, with a line above it at the grid price), then green (cheaper: the cheapest quarter of hours), blue (usual) and coral (dearer: the most expensive quarter). Under the chart is a lane per appliance with its cheapest start, its end and its average price, so anyone in the house can see when to start the dishwasher or the washing machine.
 
 ```yaml
 type: custom:watt-window-card
@@ -72,7 +72,7 @@ hours_ahead: 24                 # rolling view: leave out for every published pr
 chart_height: 110               # price plot height in px
 bar_minutes: 60                 # 15 for a bar per quarter-hour
 history_days: 30                # how far back cheap and dear are judged
-band_colors:                    # any of solar, cheap, usual, pricey
+band_colors:                    # any of solar, cheap (cheaper), usual, pricey (dearer)
   usual: "#a9c6e8"
 grid_line_color: "#d18b00"      # the line marking the grid price over a solar hour
 lane_labels: times              # or none
