@@ -20,23 +20,22 @@
 // chart_height: 110                    price plot height in px
 // bar_minutes: 60                      minutes per bar (15 for every quarter-hour)
 // history_days: 30                     how far back "cheap" and "pricey" are judged
-// band_colors: {solar, cheap, usual, pricey, dearest}
+// band_colors: {solar, cheap, usual, pricey}
 // grid_line_color: "#d18b00"           line marking the grid price over a solar hour
 // lane_labels: times                   times (after each lane) or none
 // show_legend: true
 
-const CARD_VERSION = "0.17.2";
+const CARD_VERSION = "0.18.0";
 const LANE_COLOUR = "#5b8fd1";
 const BANDS = {
   solar: "#f7cf45",
   cheap: "#7fc79a",
   usual: "#a9c6e8",
-  pricey: "#f2a07b",
-  dearest: "#e2725b",
+  pricey: "#e2725b",
 };
 // the grid price over a solar hour's bar: darker than the solar colour so it shows on white
 const GRID_LINE = "#d18b00";
-const BAND_WORDS = { solar: "cheaper because of solar", cheap: "cheap", usual: "usual", pricey: "pricey", dearest: "dearest" };
+const BAND_WORDS = { solar: "cheaper because of solar", cheap: "cheap", usual: "usual", pricey: "pricey" };
 const PERIODS = { any: null, daytime: "day", overnight: "night" };
 const QUARTER = 900000;
 const HOUR = 3600000;
@@ -159,17 +158,16 @@ class WattWindowCard extends HTMLElement {
     return `${p.toFixed(3)} ${esc(this._data?.currency)}`;
   }
 
-  // Thresholds for cheap / pricey / dearest: the last weeks' hours, or what's published now.
+  // Thresholds for cheap / pricey: the last weeks' hours, or what's published now.
   _thresholds(d) {
     const sorted = this._history || d.quarters.map((q) => q.import).sort((a, b) => a - b);
-    return { cheap: quantile(sorted, 0.25), pricey: quantile(sorted, 0.75), dearest: quantile(sorted, 0.9) };
+    return { cheap: quantile(sorted, 0.25), pricey: quantile(sorted, 0.75) };
   }
 
   _band(imp, eff, th) {
     // solar takes a noticeable share off: the bar shows both prices (see _chart)
     if (imp > 0 && eff <= imp * 0.9) return "solar";
     if (imp <= th.cheap) return "cheap";
-    if (imp >= th.dearest) return "dearest";
     if (imp >= th.pricey) return "pricey";
     return "usual";
   }

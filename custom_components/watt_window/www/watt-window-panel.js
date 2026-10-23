@@ -23,7 +23,7 @@ const RATE_KEYS = {
 const PLAN_NAMES = { flat: "One rate", day_night: "Day / night", vork5: "Day / night / winter peaks (Võrk 5)" };
 // Must match manifest.json (a test checks). Compared with the running integration
 // so a tab still holding old page code after an update says so.
-const PANEL_VERSION = "0.17.2";
+const PANEL_VERSION = "0.18.0";
 
 const DIRECTIONS = [
   [0, "North"], [45, "North-east"], [90, "East"], [135, "South-east"],
@@ -51,8 +51,8 @@ function compassName(deg) {
 }
 const WINDOW_COLOURS = ["#2e7d32", "#1565c0", "#ef6c00", "#6a1b9a", "#00838f", "#ad1457", "#5d4037"];
 // How good a price is, judged against the last 30 days (same colours as the dashboard card).
-const BANDS = { solar: "#f7cf45", cheap: "#7fc79a", usual: "#a9c6e8", pricey: "#f2a07b", dearest: "#e2725b" };
-const BAND_WORDS = { solar: "Cheaper because of solar", cheap: "Cheap", usual: "Usual", pricey: "Pricey", dearest: "Dearest" };
+const BANDS = { solar: "#f7cf45", cheap: "#7fc79a", usual: "#a9c6e8", pricey: "#e2725b" };
+const BAND_WORDS = { solar: "Cheaper because of solar", cheap: "Cheap", usual: "Usual", pricey: "Pricey" };
 const GRID_LINE = "#d18b00"; // the grid price over a solar quarter's bar
 const HISTORY_DAYS = 30;
 const quantile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(p * (sorted.length - 1))))];
@@ -131,16 +131,15 @@ class WattWindowPanel extends HTMLElement {
     }
   }
 
-  // Cheap / pricey / dearest thresholds: the last 30 days' hours, or the published prices until there's history.
+  // Cheap / pricey thresholds: the last 30 days' hours, or the published prices until there's history.
   _thresholds(d) {
     const sorted = this._history || d.quarters.map((q) => q.import).sort((a, b) => a - b);
-    return { cheap: quantile(sorted, 0.25), pricey: quantile(sorted, 0.75), dearest: quantile(sorted, 0.9) };
+    return { cheap: quantile(sorted, 0.25), pricey: quantile(sorted, 0.75) };
   }
 
   _band(q, th) {
     if (q.import > 0 && q.effective <= q.import * 0.9) return "solar";
     if (q.import <= th.cheap) return "cheap";
-    if (q.import >= th.dearest) return "dearest";
     if (q.import >= th.pricey) return "pricey";
     return "usual";
   }
@@ -269,7 +268,7 @@ class WattWindowPanel extends HTMLElement {
         <p class="explain lanes-note">The coloured lanes under the chart are your Watt Windows, one lane per length. A paler tail means you could start later for the same price. Tap a lane to shade that Watt Window on the chart.</p>
         <p class="explain"><b>Why the chart stops where it does:</b> ${esc(d.price_source)} sets tomorrow's prices once a day, at an auction that closes at noon Central European time; they're published about 45 minutes later${d.next_prices_at ? ` (${this._when(d.next_prices_at)} your time)` : ""}. Before that, nobody knows prices beyond midnight CET, so the furthest anyone can see is roughly a day and a half, and some mornings less than a day.</p>
         ${d.solar.credit ? `<p class="explain credit">Solar estimate: ${esc(d.solar.credit)}.</p>` : ""}
-        <p class="explain">Each bar is the grid price of one quarter-hour: ${esc(d.price_source)} spot plus your network rate, fees and VAT. Its colour says how that price compares with the hours of your last ${HISTORY_DAYS} days: cheap is the cheapest quarter of them, pricey the dearest quarter and dearest the dearest tenth. Where your solar is forecast to take a noticeable share off a ${esc(d.settings.load_w)} W load, the bar is yellow and shows the estimated price with solar; the line above it marks the grid price.
+        <p class="explain">Each bar is the grid price of one quarter-hour: ${esc(d.price_source)} spot plus your network rate, fees and VAT. Its colour says how that price compares with the hours of your last ${HISTORY_DAYS} days: cheap is the cheapest quarter of them and pricey the dearest quarter. Where your solar is forecast to take a noticeable share off a ${esc(d.settings.load_w)} W load, the bar is yellow and shows the estimated price with solar; the line above it marks the grid price.
         ${d.solar.configured ? (d.settings.can_export
         ? "Where your panels are forecast to produce more than your typical house load, the spare output covers the load first, so that part only costs the export price you'd otherwise have earned."
         : "Where your panels are forecast to produce more than your typical house load, the spare output covers the load first. Your system doesn't export, so that spare power would otherwise be lost: using it is free.") : ""}
