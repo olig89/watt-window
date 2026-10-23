@@ -23,7 +23,7 @@ const RATE_KEYS = {
 const PLAN_NAMES = { flat: "One rate", day_night: "Day / night", vork5: "Day / night / winter peaks (Võrk 5)" };
 // Must match manifest.json (a test checks). Compared with the running integration
 // so a tab still holding old page code after an update says so.
-const PANEL_VERSION = "0.14.0";
+const PANEL_VERSION = "0.15.0";
 
 const DIRECTIONS = [
   [0, "North"], [45, "North-east"], [90, "East"], [135, "South-east"],
@@ -50,6 +50,11 @@ function compassName(deg) {
   return "About " + names[Math.round((((Number(deg) % 360) + 360) % 360) / 45) % 8].toLowerCase();
 }
 const WINDOW_COLOURS = ["#2e7d32", "#1565c0", "#ef6c00", "#6a1b9a", "#00838f", "#ad1457", "#5d4037"];
+// How good a price is, judged against the last 30 days (same colours as the dashboard card).
+const BANDS = { solar: "#f7cf45", cheap: "#7fc79a", usual: "#a9c6e8", pricey: "#f2a07b", dearest: "#e2725b" };
+const BAND_WORDS = { solar: "Your solar covers it", cheap: "Cheap", usual: "Usual", pricey: "Pricey", dearest: "Dearest" };
+const HISTORY_DAYS = 30;
+const quantile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(p * (sorted.length - 1))))];
 
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -100,7 +105,61 @@ class WattWindowPanel extends HTMLElement {
     } catch (e) {
       this._error = e.message || String(e);
     }
+    if (!this._historyAt || Date.now() - this._historyAt > 6 * 3600000) await this._loadHistory();
     this._render();
+  }
+
+  // Hourly means of our own import price sensor, so the chart can say what counts as cheap here.
+  async _loadHistory() {
+    this._historyAt = Date.now();
+    const id = Object.values(this._hass.entities || {})
+      .find((e) => e.platform === "watt_window" && e.translation_key === "import_price")?.entity_id;
+    if (!id) return;
+    try {
+      const res = await this._hass.callWS({
+        type: "recorder/statistics_during_period",
+        start_time: new Date(Date.now() - HISTORY_DAYS * 86400000).toISOString(),
+        statistic_ids: [id],
+        period: "hour",
+        types: ["mean"],
+      });
+      const vals = (res[id] || []).map((r) => r.mean).filter((v) => typeof v === "number");
+      this._history = vals.length >= 72 ? vals.sort((a, b) => a - b) : null;
+    } catch (e) {
+      this._history = null;
+    }
+  }
+
+  // Cheap / pricey / dearest thresholds: the last 30 days' hours, or the published prices until there's history.
+  _thresholds(d) {
+    const sorted = this._history || d.quarters.map((q) => q.import).sort((a, b) => a - b);
+    return { cheap: quantile(sorted, 0.25), pricey: quantile(sorted, 0.75), dearest: quantile(sorted, 0.9) };
+  }
+
+  _band(q, th) {
+    if (q.effective <= q.import * 0.5) return "solar";
+    if (q.import <= th.cheap) return "cheap";
+    if (q.import >= th.dearest) return "dearest";
+    if (q.import >= th.pricey) return "pricey";
+    return "usual";
+  }
+
+  // What starting the load now would cost per kWh over this length, to compare a Watt Window with.
+  _nowAverage(d, minutes) {
+    const n = Math.max(1, Math.round(minutes / 15));
+    const from = Math.floor(new Date(d.now).getTime() / 900000) * 900000;
+    const qs = d.quarters.filter((q) => new Date(q.start).getTime() >= from).slice(0, n);
+    return qs.length === n ? qs.reduce((s, q) => s + q.effective, 0) / n : null;
+  }
+
+  _gain(w) {
+    if (w.active) return `<div class="gain">Cheapest is right now</div>`;
+    const nowAvg = this._nowAverage(this._data, w.minutes);
+    if (nowAvg == null) return "";
+    const saved = (nowAvg - w.average_price) * (this._data.settings.load_w / 1000) * (w.minutes / 60);
+    if (saved < 0.01) return `<div class="gain">About the same as starting now</div>`;
+    const amount = this._data.currency === "EUR" && saved < 1 ? `${Math.round(saved * 100)} c` : this._money(saved);
+    return `<div class="gain">Saves ≈ ${amount} vs starting now</div>`;
   }
 
   // ---------- formatting ----------
@@ -199,14 +258,15 @@ class WattWindowPanel extends HTMLElement {
       <div class="card">
         ${this._chart(d)}
         <div class="legend">
-          <span><i class="sw bar"></i>What a ${esc(d.settings.load_w)} W load costs each quarter-hour${d.solar.configured ? " (after solar)" : d.solar.paused ? " (grid only: solar is switched off)" : ""}</span>
-          ${d.solar.configured ? `<span><i class="sw sun"></i>Solar forecast</span>` : ""}
+          ${Object.keys(BANDS).filter((k) => k !== "solar" || d.solar.configured).map((k) => `<span><i class="sw" style="background:${BANDS[k]}"></i>${BAND_WORDS[k]}</span>`).join("")}
+          ${d.solar.configured ? `<span><i class="sw sunline"></i>Solar forecast</span>` : ""}
+          <span class="muted">${this._history ? `Compared with your last ${HISTORY_DAYS} days` : "Compared with the prices published so far"}${d.solar.paused ? " · grid only: solar is switched off" : ""}</span>
         </div>
         ${this._chartInfo ? `<div class="chartinfo">
         <p class="explain lanes-note">The coloured lanes under the chart are your Watt Windows, one lane per length. A paler tail means you could start later for the same price. Tap a lane to shade that Watt Window on the chart.</p>
         <p class="explain"><b>Why the chart stops where it does:</b> ${esc(d.price_source)} sets tomorrow's prices once a day, at an auction that closes at noon Central European time; they're published about 45 minutes later${d.next_prices_at ? ` (${this._when(d.next_prices_at)} your time)` : ""}. Before that, nobody knows prices beyond midnight CET, so the furthest anyone can see is roughly a day and a half, and some mornings less than a day.</p>
         ${d.solar.credit ? `<p class="explain credit">Solar estimate: ${esc(d.solar.credit)}.</p>` : ""}
-        <p class="explain">Each bar is the price of one quarter-hour: ${esc(d.price_source)} spot plus your network rate, fees and VAT.
+        <p class="explain">Each bar is the grid price of one quarter-hour: ${esc(d.price_source)} spot plus your network rate, fees and VAT. Its colour says how that price compares with the hours of your last ${HISTORY_DAYS} days: cheap is the cheapest quarter of them, pricey the dearest quarter and dearest the dearest tenth. Yellow means your solar is forecast to cover most of a ${esc(d.settings.load_w)} W load then.
         ${d.solar.configured ? (d.settings.can_export
         ? "Where your panels are forecast to produce more than your typical house load, the spare output covers the load first, so that part only costs the export price you'd otherwise have earned."
         : "Where your panels are forecast to produce more than your typical house load, the spare output covers the load first. Your system doesn't export, so that spare power would otherwise be lost: using it is free.") : ""}
@@ -303,6 +363,7 @@ class WattWindowPanel extends HTMLElement {
         ${this._foldButton(`win-${w.minutes}`, open, `details for ${esc(w.label)}`)}
       </div>
       <div class="when">${when}</div>
+      ${this._gain(w)}
       ${!w.active && w.latest_start && w.latest_start !== w.start
         ? `<div class="s flex">Same price if you start any time up to ${this._time(w.latest_start)}</div>` : ""}
       ${open ? `<div class="details">
@@ -337,7 +398,8 @@ class WattWindowPanel extends HTMLElement {
     const qs = d.quarters;
     if (!qs.length) return `<div class="s">No prices yet.</div>`;
     const showSolar = d.solar.configured;
-    const price = (q) => (showSolar ? q.effective : q.import);
+    const price = (q) => q.import;
+    const th = this._thresholds(d);
     const lanes = d.windows.filter((w) => w.start);
     const LANE_H = 14, LANE_GAP = 6;
     const W = 1000, top = 12, axisH = 40, left = 44, right = showSolar ? 44 : 12;
@@ -365,22 +427,20 @@ class WattWindowPanel extends HTMLElement {
       const a = new Date(fw.start).getTime(), b = new Date(fw.end).getTime();
       svg += `<rect x="${x(a)}" y="${top}" width="${x(b) - x(a)}" height="${plotH}" fill="${colourOf(fw)}" opacity="0.16"/>`;
     }
+    qs.forEach((q) => {
+      const t = new Date(q.start).getTime();
+      const past = t + 900000 <= now;
+      const y0 = y(Math.max(0, minP)), y1 = y(price(q));
+      svg += `<rect x="${x(t)}" y="${Math.min(y0, y1)}" width="${bw}" height="${Math.max(0.5, Math.abs(y1 - y0))}" fill="${BANDS[this._band(q, th)]}" opacity="${past ? 0.35 : 1}"/>`;
+    });
     if (showSolar) {
       let path = `M ${x(t0)} ${ys(0)}`;
       qs.forEach((q) => {
         const t = new Date(q.start).getTime();
         path += ` L ${x(t)} ${ys(q.solar_w)} L ${x(t + 900000)} ${ys(q.solar_w)}`;
       });
-      path += ` L ${x(t1)} ${ys(0)} Z`;
-      svg += `<path d="${path}" fill="#fbc02d" opacity="0.28"/>`;
+      svg += `<path d="${path}" fill="none" stroke="#e0a800" stroke-width="2" stroke-linejoin="round"/>`;
     }
-    qs.forEach((q) => {
-      const t = new Date(q.start).getTime();
-      const past = t + 900000 <= now;
-      const y0 = y(Math.max(0, minP)), y1 = y(price(q));
-      const covered = showSolar && q.effective < q.import - 1e-9;
-      svg += `<rect x="${x(t)}" y="${Math.min(y0, y1)}" width="${bw}" height="${Math.max(0.5, Math.abs(y1 - y0))}" fill="${covered ? "#43a047" : "var(--primary-color)"}" opacity="${past ? 0.3 : 0.85}"/>`;
-    });
     for (let k = 0; k <= 4; k++) {
       const p = minP + ((maxP - minP) * k) / 4;
       svg += `<line x1="${left}" x2="${W - right}" y1="${y(p)}" y2="${y(p)}" stroke="var(--divider-color)" stroke-width="0.6"/>`;
@@ -863,7 +923,8 @@ const STYLES = `
   .ax.now { fill:#e53935; }
   .legend { display:flex; flex-wrap:wrap; gap:16px; font-size:12px; color: var(--secondary-text-color); margin-top:8px; align-items:center; }
   .sw { display:inline-block; width:12px; height:10px; margin-right:6px; vertical-align:middle; border-radius:2px; }
-  .sw.bar { background: var(--primary-color); } .sw.sun { background:#fbc02d; opacity:.5; } .sw.band { background:#2e7d32; opacity:.25; }
+  .sw.sunline { height:0; border-top:2px solid #e0a800; border-radius:0; }
+  .gain { font-size:14px; font-weight:500; color: var(--success-color, #2e7d32); margin:0 0 4px; }
   .explain { font-size:13px; color: var(--secondary-text-color); line-height:1.5; margin:12px 0 0; }
   .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap:12px 16px; }
   label { display:flex; flex-direction:column; font-size:13px; color: var(--secondary-text-color); gap:4px; }

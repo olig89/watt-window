@@ -44,7 +44,7 @@ HACS shows an update when a new release is published. Download it and restart Ho
 
 ## The sidebar page
 
-- **Overview:** the price now; a **Solar** switch next to the Watt Windows heading (turn it off and the Watt Windows, their sensors and the chart all use grid prices only, while your solar setup is kept; a Battery switch sits beside it for later); a card per Watt Window length with its start time, its daytime (sun) and overnight (moon) versions, and details you can fold away; and a chart of every published price with a lane per Watt Window underneath and its explanation behind the same fold-out button.
+- **Overview:** the price now; a **Solar** switch next to the Watt Windows heading (turn it off and the Watt Windows, their sensors and the chart all use grid prices only, while your solar setup is kept; a Battery switch sits beside it for later); a card per Watt Window length with its start time, what waiting for it saves against starting now (for your appliance's watts), its daytime (sun) and overnight (moon) versions, and details you can fold away; and a chart of every published price, coloured by how it compares with your last 30 days (yellow where your solar covers the load, then cheap, usual, pricey and dearest), with the solar forecast as a line, a lane per Watt Window underneath and its explanation behind the same fold-out button.
 - **Settings:** window lengths, your day hours (a slider with a handle for when the day starts and one for when it ends), your solar setup, home battery, appliance watts, and your tariff rates. Changes apply straight away.
 
 To change the tariff type (for example moving from a flat rate to day/night) or the solar forecast, use **Settings → Devices & services → Watt Window → Configure**.
