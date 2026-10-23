@@ -24,7 +24,7 @@
 // lane_labels: times                   times (after each lane) or none
 // show_legend: true
 
-const CARD_VERSION = "0.16.1";
+const CARD_VERSION = "0.17.0";
 const LANE_COLOUR = "#5b8fd1";
 const BANDS = {
   solar: "#f7cf45",
@@ -163,7 +163,8 @@ class WattWindowCard extends HTMLElement {
   }
 
   _band(imp, eff, th) {
-    if (eff <= imp * 0.5) return "solar";
+    // solar takes a noticeable share off: the bar shows both prices (see _chart)
+    if (imp > 0 && eff <= imp * 0.9) return "solar";
     if (imp <= th.cheap) return "cheap";
     if (imp >= th.dearest) return "dearest";
     if (imp >= th.pricey) return "pricey";
@@ -296,7 +297,7 @@ class WattWindowCard extends HTMLElement {
     const bars = [...groups.entries()].map(([t, g]) => {
       const imp = g.reduce((s, q) => s + q.import, 0) / g.length;
       const eff = g.reduce((s, q) => s + q.effective, 0) / g.length;
-      return { t, end: t + g.length * QUARTER, imp, band: this._band(imp, eff, th) };
+      return { t, end: t + g.length * QUARTER, imp, eff, band: this._band(imp, eff, th) };
     });
 
     const W = 460, top = 8, axisH = 30, left = 34, right = 8;
@@ -315,14 +316,23 @@ class WattWindowCard extends HTMLElement {
       svg += `<line x1="${left}" x2="${W - right}" y1="${y(p)}" y2="${y(p)}" class="grid"/>`;
       svg += `<text x="${left - 4}" y="${y(p) + 4}" text-anchor="end" class="ax">${d.currency === "EUR" ? (p * 100).toFixed(0) + "c" : p.toFixed(2)}</text>`;
     }
+    // rounded top, square base
+    const barPath = (bx, bw, price, minH) => {
+      const by = Math.min(y(price), top + plotH - minH), bh = top + plotH - by;
+      const r = Math.min(5, bw / 2, bh);
+      return `M ${bx} ${by + bh} V ${by + r} Q ${bx} ${by} ${bx + r} ${by} H ${bx + bw - r} Q ${bx + bw} ${by} ${bx + bw} ${by + r} V ${by + bh} Z`;
+    };
     for (const b of bars) {
       const bx = x(b.t) + gap / 2, bw = Math.max(1, x(b.end) - x(b.t) - gap);
-      const by = y(b.imp), bh = Math.max(1, top + plotH - by);
-      const r = Math.min(5, bw / 2, bh);
       const fill = esc(colours[b.band]);
       const past = b.end <= now ? ` opacity="0.45"` : "";
-      // rounded top, square base
-      svg += `<path d="M ${bx} ${by + bh} V ${by + r} Q ${bx} ${by} ${bx + r} ${by} H ${bx + bw - r} Q ${bx + bw} ${by} ${bx + bw} ${by + r} V ${by + bh} Z" fill="${fill}"${past}/>`;
+      if (b.band === "solar") {
+        // pale: the grid price; solid: the estimate with forecast solar covering part of the load
+        svg += `<path d="${barPath(bx, bw, b.imp, 1)}" class="ghost" fill="${fill}" stroke="${fill}"${past}/>`;
+        svg += `<path d="${barPath(bx, bw, b.eff, 3)}" fill="${fill}"${past}/>`;
+      } else {
+        svg += `<path d="${barPath(bx, bw, b.imp, 1)}" fill="${fill}"${past}/>`;
+      }
     }
     const hourStep = (t1 - t0) / HOUR > 24 ? 6 : 3;
     for (let t = Math.ceil(t0 / HOUR) * HOUR; t <= t1; t += HOUR) {
@@ -374,7 +384,9 @@ class WattWindowCard extends HTMLElement {
     });
     const inLegend = Object.keys(BANDS).filter((k) => k !== "solar" || bars.some((b) => b.band === "solar"));
     const legend = this._config.show_legend === false ? "" :
-      `<div class="lg">${inLegend.map((k) => `<span><i style="background:${esc(colours[k])}"></i>${BAND_WORDS[k]}</span>`).join("")}</div>`;
+      `<div class="lg">${inLegend.map((k) => `<span><i style="${k === "solar"
+        ? `background:linear-gradient(to top, ${esc(colours[k])} 50%, transparent 50%);box-shadow:inset 0 0 0 1px ${esc(colours[k])}`
+        : `background:${esc(colours[k])}`}"></i>${BAND_WORDS[k]}</span>`).join("")}</div>`;
     return chart + `<div class="lanes" style="--gutter:${(left / W) * 100}%;--right:${(right / W) * 100}%">${rows.join("")}</div>` + legend;
   }
 }
@@ -388,6 +400,7 @@ const STYLES = `
   svg { display:block; width:100%; height:auto; }
   .ax { font-size:11px; fill: var(--secondary-text-color); }
   .ax.day { font-weight:600; fill: var(--primary-text-color); }
+  .ghost { fill-opacity:0.3; stroke-width:1.5; }
   .grid { stroke: var(--divider-color); stroke-width:1; stroke-dasharray:1 3; shape-rendering:crispEdges; }
   .midnight { stroke: var(--secondary-text-color); stroke-width:1; stroke-dasharray:3 3; shape-rendering:crispEdges; }
   .gap { fill:none; stroke: var(--secondary-text-color); stroke-width:1.5; stroke-dasharray:4 4; }
