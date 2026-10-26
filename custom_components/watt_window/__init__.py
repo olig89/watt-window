@@ -27,7 +27,27 @@ type WattWindowConfigEntry = ConfigEntry[WattWindowCoordinator]
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async_register_websocket(hass)
+    # Serve the dashboard card as soon as Home Assistant loads us, not after the first price
+    # fetch: a dashboard opened during startup (or while the entry retries) would otherwise get
+    # a 404 for the card and show a configuration error until it is reloaded.
+    await _async_register_frontend(hass)
     return True
+
+
+async def _async_register_frontend(hass: HomeAssistant) -> None:
+    """Static files and the card resource. Skipped quietly where the frontend isn't loaded (tests)."""
+    if f"{DOMAIN}_card" in hass.data or "frontend" not in hass.config.components:
+        return
+    from homeassistant.components.http import StaticPathConfig
+
+    www = Path(__file__).parent / "www"
+    if not hass.data.get(f"{DOMAIN}_static"):  # a route can't be registered twice
+        await hass.http.async_register_static_paths([StaticPathConfig(STATIC_URL, str(www), False)])
+        hass.data[f"{DOMAIN}_static"] = True
+    card = await hass.async_add_executor_job((www / "watt-window-card.js").stat)
+    card_url = f"{STATIC_URL}/watt-window-card.js?v={card.st_mtime_ns}"
+    await _async_register_card(hass, card_url)
+    hass.data[f"{DOMAIN}_card"] = card_url
 
 
 async def _async_register_panel(hass: HomeAssistant) -> None:
@@ -35,10 +55,9 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
     if hass.data.get(f"{DOMAIN}_panel") or "frontend" not in hass.config.components:
         return
     from homeassistant.components import panel_custom
-    from homeassistant.components.http import StaticPathConfig
 
+    await _async_register_frontend(hass)
     www = Path(__file__).parent / "www"
-    await hass.http.async_register_static_paths([StaticPathConfig(STATIC_URL, str(www), False)])
     version = (await hass.async_add_executor_job((www / "watt-window-panel.js").stat)).st_mtime_ns
     await panel_custom.async_register_panel(
         hass,
@@ -49,10 +68,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
         module_url=f"{STATIC_URL}/watt-window-panel.js?v={version}",
         require_admin=True,
     )
-    card = await hass.async_add_executor_job((www / "watt-window-card.js").stat)
-    card_url = f"{STATIC_URL}/watt-window-card.js?v={card.st_mtime_ns}"
-    await _async_register_card(hass, card_url)
-    hass.data[f"{DOMAIN}_panel"] = card_url
+    hass.data[f"{DOMAIN}_panel"] = True
 
 
 def _card_resources(hass: HomeAssistant):
@@ -135,8 +151,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: WattWindowConfigEntry) 
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: WattWindowConfigEntry) -> None:
-    if card_url := hass.data.pop(f"{DOMAIN}_panel", None):
-        from homeassistant.components import frontend
+    from homeassistant.components import frontend
 
+    if hass.data.pop(f"{DOMAIN}_panel", None):
         frontend.async_remove_panel(hass, PANEL_URL)
+    if card_url := hass.data.pop(f"{DOMAIN}_card", None):
         await _async_remove_card(hass, card_url)
