@@ -1,4 +1,16 @@
-# Watt Window
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/olig89/watt-window/main/custom_components/watt_window/brand/dark_logo.png">
+    <img alt="Watt Window" src="https://raw.githubusercontent.com/olig89/watt-window/main/custom_components/watt_window/brand/logo.png" height="72">
+  </picture>
+</p>
+
+<p align="center">
+  <a href="https://hacs.xyz/docs/faq/custom_repositories/"><img alt="HACS custom repository" src="https://img.shields.io/badge/HACS-custom-41BDF5"></a>
+  <a href="https://github.com/olig89/watt-window/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/olig89/watt-window?color=13917A"></a>
+  <img alt="Home Assistant 2026.9 or later" src="https://img.shields.io/badge/Home%20Assistant-2026.9%2B-18BCF2">
+  <a href="https://github.com/olig89/watt-window/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/olig89/watt-window/actions/workflows/tests.yml/badge.svg"></a>
+</p>
 
 Finds the cheapest hours to run things in Home Assistant, using Nord Pool spot prices, your own tariff, and an optional solar forecast. Set-up asks for as little as possible; you add detail later, when you have it.
 
