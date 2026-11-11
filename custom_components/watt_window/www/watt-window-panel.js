@@ -335,7 +335,7 @@ class WattWindowPanel extends HTMLElement {
     const plan = coming.length ? `<div class="s hp-plan">${coming.map((b) =>
       `<span class="hp-${b.mode}">${this._time(b.start)}–${this._time(b.end)} ${names[b.mode] || b.mode} · ${this._price(b.price)}</span>`).join("<br>")}</div>`
       + (hp.plan_saving !== null && hp.plan_saving !== undefined
-        ? `<div class="s">About ${this._money(hp.plan_saving)} cheaper than running normally until ${this._time(hp.plan[hp.plan.length - 1].end)}, by the model</div>` : "")
+        ? `<div class="s">About ${this._money(hp.plan_saving)} cheaper than running normally until ${this._when(hp.plan[hp.plan.length - 1].end)}, by the model</div>` : "")
       : "";
     return `<div class="spare hp hp-${hp.mode}">
       <div class="k">Heat pump advice${hp.planner === "plan" ? " (plan)" : ""}</div>
