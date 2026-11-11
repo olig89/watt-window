@@ -65,6 +65,36 @@ async def test_plan_without_a_forecast_falls_back_to_look_ahead(hass, tallinn, n
     assert st.attributes["plan"] == []
 
 
+@pytest.mark.parametrize("start", ["2026-09-22 00:00:00+00:00", "2026-09-22 01:00:00+00:00",
+                                   "2026-09-22 01:30:00+00:00", "2026-09-22 04:30:00+00:00"])
+async def test_first_plan_replaces_the_start_up_fallback_at_once(hass, tallinn, nordpool, weather, freezer, start):
+    # At start-up the advice comes before the forecast, from look ahead. The first plan must
+    # take over straight away, not after the minimum time in a mode.
+    freezer.move_to(start)
+    await setup(hass, **PLAN)
+    await settle(hass)
+    st = hass.states.get(ADVICE)
+    plan_now = next(b for b in st.attributes["plan"] if b["start"] <= st.attributes["plan_made_at"] < b["end"])
+    assert st.state == plan_now["mode"], st.attributes
+    assert st.attributes["reason"].startswith("Plan:"), st.attributes["reason"]
+
+
+@pytest.mark.freeze_time("2026-09-22 00:00:00+00:00")
+async def test_saving_settings_keeps_the_mode_and_since(hass, tallinn, nordpool, weather, freezer, hass_ws_client):
+    entry = await setup(hass, **PLAN)
+    await settle(hass)
+    before = hass.states.get(ADVICE)
+    assert before.state == "hold_back"
+    freezer.tick(timedelta(minutes=20))
+    ws = await hass_ws_client(hass)
+    await ws.send_json({"id": 1, "type": "watt_window/save", "heat_pump_boost_penalty": 0.06})
+    assert (await ws.receive_json())["success"]
+    await settle(hass)
+    assert entry.options["heat_pump_boost_penalty"] == 0.06
+    after = hass.states.get(ADVICE)
+    assert after.state == before.state and after.attributes["since"] == before.attributes["since"]
+
+
 @pytest.mark.freeze_time("2026-09-22 01:00:00+00:00")
 async def test_look_ahead_has_no_plan_attributes(hass, tallinn, nordpool):
     await setup(hass, heat_pump_advice=True)
