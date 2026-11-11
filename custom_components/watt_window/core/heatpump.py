@@ -88,6 +88,11 @@ class StickyMode:
         self.mode: str | None = None
         self.since: datetime | None = None
 
+    def force(self, now: datetime, mode: str) -> str:
+        """Switch now, without waiting out the minimum (for a mode nobody really chose)."""
+        self.mode, self.since = mode, now
+        return self.mode
+
     def update(self, now: datetime, wanted: str) -> str:
         if self.mode is None or (wanted != self.mode and now - self.since >= self.min_duration):
             if wanted != self.mode:

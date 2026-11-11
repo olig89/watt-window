@@ -129,10 +129,19 @@ class HeatPumpAdvisor:
         self.plan: Plan | None = None
         self._planning = False
         self._replan_again = False
-        # The store survives a reload (saving settings reloads the entry), not a restart.
+        # A mode the plan didn't choose (the look-ahead fallback while the first forecast
+        # loads, or the other planner's mode before a switch): the first plan may replace it
+        # at once, without waiting out the minimum time, and plans ignore it.
+        self._provisional = True
+        self._from_plan = False
+        # The store and the current mode survive a reload (saving settings reloads the
+        # entry), not a restart.
         saved = hass.data.get(f"{DOMAIN}_hp_store", {}).get(self.entry_id)
-        self.store = saved[0] if saved else 0.0
-        self._store_at: datetime | None = saved[1] if saved else None
+        self.store = saved["store"] if saved else 0.0
+        self._store_at: datetime | None = saved["store_at"] if saved else None
+        if saved and saved["mode"]:
+            self.sticky.mode, self.sticky.since = saved["mode"], saved["since"]
+            self._provisional = saved["provisional"] or not saved["planning"]
 
     @property
     def planning(self) -> bool:
@@ -156,7 +165,10 @@ class HeatPumpAdvisor:
     def async_stop(self) -> None:
         while self._unsubs:
             self._unsubs.pop()()
-        self.hass.data.setdefault(f"{DOMAIN}_hp_store", {})[self.entry_id] = (self.store, self._store_at)
+        self.hass.data.setdefault(f"{DOMAIN}_hp_store", {})[self.entry_id] = {
+            "store": self.store, "store_at": self._store_at, "mode": self.sticky.mode,
+            "since": self.sticky.since, "provisional": self._provisional, "planning": self.planning,
+        }
 
     @callback
     def _on_tick(self, _now: datetime) -> None:
@@ -222,8 +234,9 @@ class HeatPumpAdvisor:
                     return
                 now = dt_util.utcnow()
                 self._advance_store(now)
-                forecast, store, mode = self.forecast, self.store, self.sticky.mode
-                age = quarters_in_mode(self.sticky.since, now)
+                forecast, store = self.forecast, self.store
+                mode = None if self._provisional else self.sticky.mode
+                age = 0 if self._provisional else quarters_in_mode(self.sticky.since, now)
                 self.plan = await self.hass.async_add_executor_job(
                     lambda: make_plan(
                         data.quarters, now, forecast, self.plan_settings,
@@ -255,10 +268,22 @@ class HeatPumpAdvisor:
         spare = getattr(self.coordinator, "spare", None)
         spare_now = bool(spare and spare.switch.is_on)
         advice = advise(data.quarters, now, self.power_w, self.base_w, self.store_hours, self.margin, spare_enough=spare_now)
+        self._from_plan = False
         if self.planning and not spare_now:
             advice = self._planned(advice, now)
         self.advice = advice
-        self.sticky.update(now, advice.mode)
+        if not self.planning:
+            self.sticky.update(now, advice.mode)
+        elif self._from_plan and self._provisional:
+            # The first plan replaces a mode it didn't choose, without the minimum wait.
+            if advice.mode != self.sticky.mode:
+                self.sticky.force(now, advice.mode)
+            self._provisional = False
+        else:
+            since = self.sticky.since
+            self.sticky.update(now, advice.mode)
+            if not self._from_plan and not spare_now and self.sticky.since != since:
+                self._provisional = True  # set by the look-ahead fallback
         async_dispatcher_send(self.hass, signal(self.entry_id))
 
     def _planned(self, look: Advice, now: datetime) -> Advice:
@@ -269,6 +294,7 @@ class HeatPumpAdvisor:
             return Advice(look.mode, f"{why or 'Waiting for the forecast'}: looking ahead instead. {look.reason}",
                           look.price_now, look.average_ahead, look.cheapest_ahead, look.cheapest_at,
                           look.hours_ahead_known)
+        self._from_plan = True
         mode = block.mode
         until = dt_util.as_local(block.end).strftime("%H:%M")
         reason = f"{PLAN_REASONS[mode]} (until {until})"
