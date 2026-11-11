@@ -23,7 +23,7 @@ const RATE_KEYS = {
 const PLAN_NAMES = { flat: "One rate", day_night: "Day / night", vork5: "Day / night / winter peaks (Võrk 5)" };
 // Must match manifest.json (a test checks). Compared with the running integration
 // so a tab still holding old page code after an update says so.
-const PANEL_VERSION = "0.18.3";
+const PANEL_VERSION = "0.19.0";
 
 const DIRECTIONS = [
   [0, "North"], [45, "North-east"], [90, "East"], [135, "South-east"],
@@ -329,11 +329,20 @@ class WattWindowPanel extends HTMLElement {
     let detail = "";
     if (hp.mode === "hold_back" && hp.cheapest_at) detail = `Cheaper from ${this._when(hp.cheapest_at)} (${this._price(hp.cheapest_ahead)})`;
     else if (hp.mode === "boost" && hp.average_ahead !== null) detail = `Now ${this._price(hp.price_now)} vs ${this._price(hp.average_ahead)} over the next ${hp.store_hours} h`;
+    if (hp.planner === "plan") detail = "";
+    const names = { boost: "Boost", normal: "Normal", hold_back: "Hold back" };
+    const coming = hp.planner === "plan" ? (hp.plan || []).slice(0, 6) : [];
+    const plan = coming.length ? `<div class="s hp-plan">${coming.map((b) =>
+      `<span class="hp-${b.mode}">${this._time(b.start)}–${this._time(b.end)} ${names[b.mode] || b.mode} · ${this._price(b.price)}</span>`).join("<br>")}</div>`
+      + (hp.plan_saving !== null && hp.plan_saving !== undefined
+        ? `<div class="s">About ${this._money(hp.plan_saving)} cheaper than running normally until ${this._time(hp.plan[hp.plan.length - 1].end)}, by the model</div>` : "")
+      : "";
     return `<div class="spare hp hp-${hp.mode}">
-      <div class="k">Heat pump advice</div>
+      <div class="k">Heat pump advice${hp.planner === "plan" ? " (plan)" : ""}</div>
       <div class="v"><ha-icon icon="${icon}"></ha-icon> ${label}</div>
       <div class="s">${esc(hp.reason || "")}</div>
       ${detail ? `<div class="s">${detail}</div>` : ""}
+      ${plan}
     </div>`;
   }
 
@@ -545,6 +554,19 @@ class WattWindowPanel extends HTMLElement {
         heat_pump_store_hours: s.heat_pump_store_hours,
         heat_pump_margin_c: +(s.heat_pump_margin * 100).toFixed(2),
         heat_pump_min_minutes: s.heat_pump_min_minutes,
+        heat_pump_planner: s.heat_pump_planner || "look_ahead",
+        heat_pump_weather_entity: s.heat_pump_weather_entity || "",
+        heat_pump_kwh_per_degree_day: s.heat_pump_kwh_per_degree_day,
+        heat_pump_balance_temp: s.heat_pump_balance_temp,
+        heat_pump_boost_penalty_pct: +(s.heat_pump_boost_penalty * 100).toFixed(1),
+        heat_pump_min_block_hours: s.heat_pump_min_block_hours,
+        heat_pump_max_boost_hours: s.heat_pump_max_boost_hours,
+        heat_pump_bank_share_pct: Math.round(s.heat_pump_bank_share * 100),
+        heat_pump_bank_hours: s.heat_pump_bank_hours,
+        heat_pump_brine_entity: s.heat_pump_brine_entity || "",
+        heat_pump_brine_min: s.heat_pump_brine_min,
+        heat_pump_energy_entity: s.heat_pump_energy_entity || "",
+        heat_pump_outdoor_entity: s.heat_pump_outdoor_entity || "",
         spare_grid_entity: s.spare_grid_entity || "",
         spare_grid_import_negative: !!s.spare_grid_import_negative,
         spare_solar_entity: s.spare_solar_entity || "",
@@ -615,7 +637,8 @@ class WattWindowPanel extends HTMLElement {
           <label>Only shift for at least (c/kWh)<input type="number" min="0" max="100" step="0.5" data-hp="heat_pump_margin_c" value="${f.heat_pump_margin_c}"></label>
           <label>Stay in a mode at least (minutes)<input type="number" min="0" max="240" step="5" data-hp="heat_pump_min_minutes" value="${f.heat_pump_min_minutes}"></label>
         </div>
-        <p class="s"><b>Hold back</b> when a stretch at least that much cheaper comes within the hours heat stays useful. <b>Boost</b> when there's spare solar, or now is at least that much cheaper than the hours ahead. The minimum time in a mode protects the compressor from short cycling; ask your installer what it needs.</p>` : ""}
+        <p class="s"><b>Hold back</b> when a stretch at least that much cheaper comes within the hours heat stays useful. <b>Boost</b> when there's spare solar, or now is at least that much cheaper than the hours ahead. The minimum time in a mode protects the compressor from short cycling; ask your installer what it needs.</p>
+        ${this._planSettings(d, f)}` : ""}
       </div>
       <div class="card">
         <h3>Home battery</h3>
@@ -642,6 +665,68 @@ class WattWindowPanel extends HTMLElement {
         </div>
       </div>
       <div class="actions"><button class="btn primary" id="save" ${this._saving ? "disabled" : ""}>${this._saving ? "Saving…" : "Save"}</button></div>`;
+  }
+
+  _planSettings(d, f) {
+    const hs = d.settings.heat_pump_sensors || {};
+    const opts = (list, sel, none) => (none ? `<option value="">${none}</option>` : "")
+      + (list || []).map((o) => `<option value="${esc(o.entity_id)}" ${o.entity_id === sel ? "selected" : ""}>${esc(o.name)}</option>`).join("");
+    const head = `<h4>Planner</h4>
+      <div class="grid">
+        <label>How to decide<select data-hps="heat_pump_planner">
+          <option value="look_ahead" ${f.heat_pump_planner !== "plan" ? "selected" : ""}>Look ahead (the hours heat stays useful)</option>
+          <option value="plan" ${f.heat_pump_planner === "plan" ? "selected" : ""}>Plan the day (every known price)</option>
+        </select></label>
+      </div>`;
+    if (f.heat_pump_planner !== "plan") return head;
+    const fit = this._fit;
+    let fitText = "";
+    if (fit && fit.loading) fitText = `<p class="s">Reading your history…</p>`;
+    else if (fit && fit.error) fitText = `<p class="s">${esc(fit.error)}</p>`;
+    else if (fit && !fit.fit) fitText = `<p class="s">Not enough heating days to go on (${fit.days_found} days of history, and it needs at least 7 cool ones with some spread in temperature).</p>`;
+    else if (fit) fitText = `<p class="s">From ${fit.fit.days} days: <b>${fit.fit.kwh_per_degree_day} kWh</b> per degree-day, heating stops above <b>${fit.fit.balance_temp} °C</b> (fit R² ${fit.fit.r2}; above 0.6 is a good line). <button class="btn" id="hpfituse">Use these</button></p>`;
+    return `${head}
+      <p class="s">Plans boost, normal and hold back over every price known, from the outdoor forecast and how much heat your house needs. The house is treated as a heat store: it can coast for the hours above (at 0 °C outside; shorter when colder) and a boost banks a share of that. Blocks of at least the shortest length below keep the compressor on long runs.</p>
+      <div class="grid">
+        <label>Temperature forecast from<select data-hps="heat_pump_weather_entity">${opts(hs.weather, f.heat_pump_weather_entity, hs.weather?.length ? "" : "No weather entity")}</select></label>
+        <label>Heat pump electricity per degree-day (kWh)<input type="number" min="0.05" step="0.05" data-hp="heat_pump_kwh_per_degree_day" value="${f.heat_pump_kwh_per_degree_day}"></label>
+        <label>Heating stops above (°C)<input type="number" min="5" max="25" step="0.5" data-hp="heat_pump_balance_temp" value="${f.heat_pump_balance_temp}"></label>
+      </div>
+      <p class="s">Not sure? Let Watt Window work them out from your history: pick the heat pump's <b>heating</b> energy meter (not hot water) and an outdoor temperature sensor.</p>
+      <div class="grid">
+        <label>Heat pump heating energy<select data-hps="heat_pump_energy_entity">${opts(hs.energy, f.heat_pump_energy_entity, "Pick a sensor")}</select></label>
+        <label>Outdoor temperature<select data-hps="heat_pump_outdoor_entity">${opts(hs.temperature, f.heat_pump_outdoor_entity, "Pick a sensor")}</select></label>
+      </div>
+      <p class="s"><button class="btn" id="hpfit" ${f.heat_pump_energy_entity && f.heat_pump_outdoor_entity ? "" : "disabled"}>Suggest from the last 45 days</button> Leave out days away from home or with the heating set unusually.</p>
+      ${fitText}
+      <div class="grid">
+        <label>A boost costs this much more electricity (%)<input type="number" min="0" max="50" step="0.5" data-hp="heat_pump_boost_penalty_pct" value="${f.heat_pump_boost_penalty_pct}"></label>
+        <label>A boost banks at most (% of the coasting store)<input type="number" min="0" max="100" step="5" data-hp="heat_pump_bank_share_pct" value="${f.heat_pump_bank_share_pct}"></label>
+        <label>…and has banked most of it after (hours)<input type="number" min="0.5" max="12" step="0.5" data-hp="heat_pump_bank_hours" value="${f.heat_pump_bank_hours}"></label>
+        <label>Shortest boost or hold back (hours)<input type="number" min="0.25" max="8" step="0.25" data-hp="heat_pump_min_block_hours" value="${f.heat_pump_min_block_hours}"></label>
+        <label>Longest boost (hours)<input type="number" min="1" max="24" step="0.5" data-hp="heat_pump_max_boost_hours" value="${f.heat_pump_max_boost_hours}"></label>
+      </div>
+      <p class="s">A boost raises the flow temperature, which costs efficiency (about 3 % per degree on many heat pumps). Rooms already at their setpoint close their valves and take no extra heat, so a boost usually banks much less than the house can coast on.</p>
+      <h4>Ground loop (optional)</h4>
+      <div class="grid">
+        <label>Brine temperature sensor<select data-hps="heat_pump_brine_entity">${opts(hs.temperature, f.heat_pump_brine_entity, "None")}</select></label>
+        ${f.heat_pump_brine_entity ? `<label>No boost while brine is below (°C)<input type="number" min="-15" max="15" step="0.5" data-hp="heat_pump_brine_min" value="${f.heat_pump_brine_min}"></label>` : ""}
+      </div>`;
+  }
+
+  async _suggestHeatNeed() {
+    const f = this._draft;
+    this._fit = { loading: true };
+    try {
+      this._fit = await this._hass.callWS({
+        type: "watt_window/heat_need_fit",
+        energy_entity: f.heat_pump_energy_entity,
+        outdoor_entity: f.heat_pump_outdoor_entity,
+      });
+    } catch (e) {
+      this._fit = { error: `Couldn't read the history: ${e.message || e.code || e}` };
+    }
+    this._render();
   }
 
   _spareSettings(d, f) {
@@ -777,6 +862,15 @@ class WattWindowPanel extends HTMLElement {
     const hpOn = this.shadowRoot.getElementById("hpon");
     if (hpOn) hpOn.addEventListener("change", () => { f.heat_pump_advice = hpOn.checked; this._render(); });
     $("[data-hp]").forEach((i) => i.addEventListener("change", () => (f[i.dataset.hp] = Number(i.value))));
+    $("[data-hps]").forEach((i) => i.addEventListener("change", () => { f[i.dataset.hps] = i.value; this._render(); }));
+    const hpFit = this.shadowRoot.getElementById("hpfit");
+    if (hpFit) hpFit.addEventListener("click", () => this._suggestHeatNeed());
+    const hpFitUse = this.shadowRoot.getElementById("hpfituse");
+    if (hpFitUse) hpFitUse.addEventListener("click", () => {
+      f.heat_pump_kwh_per_degree_day = this._fit.fit.kwh_per_degree_day;
+      f.heat_pump_balance_temp = this._fit.fit.balance_temp;
+      this._render();
+    });
     const spareNeg = this.shadowRoot.getElementById("spareneg");
     if (spareNeg) spareNeg.addEventListener("change", () => (f.spare_grid_import_negative = spareNeg.checked));
     const canExport = this.shadowRoot.getElementById("canexport");
@@ -811,6 +905,21 @@ class WattWindowPanel extends HTMLElement {
         heat_pump_store_hours: this._draft.heat_pump_store_hours,
         heat_pump_margin: this._draft.heat_pump_margin_c / 100,
         heat_pump_min_minutes: this._draft.heat_pump_min_minutes,
+        heat_pump_planner: this._draft.heat_pump_planner,
+        ...(this._draft.heat_pump_planner === "plan" ? {
+          heat_pump_weather_entity: this._draft.heat_pump_weather_entity || null,
+          heat_pump_kwh_per_degree_day: this._draft.heat_pump_kwh_per_degree_day,
+          heat_pump_balance_temp: this._draft.heat_pump_balance_temp,
+          heat_pump_boost_penalty: this._draft.heat_pump_boost_penalty_pct / 100,
+          heat_pump_bank_share: this._draft.heat_pump_bank_share_pct / 100,
+          heat_pump_bank_hours: this._draft.heat_pump_bank_hours,
+          heat_pump_min_block_hours: this._draft.heat_pump_min_block_hours,
+          heat_pump_max_boost_hours: this._draft.heat_pump_max_boost_hours,
+          heat_pump_brine_entity: this._draft.heat_pump_brine_entity || null,
+          heat_pump_brine_min: this._draft.heat_pump_brine_min,
+          heat_pump_energy_entity: this._draft.heat_pump_energy_entity || null,
+          heat_pump_outdoor_entity: this._draft.heat_pump_outdoor_entity || null,
+        } : {}),
         spare_grid_entity: this._draft.spare_grid_entity || null,
         spare_solar_entity: this._draft.spare_solar_entity || null,
         spare_grid_import_negative: this._draft.spare_grid_import_negative,
@@ -909,6 +1018,9 @@ const STYLES = `
   .hp .v ha-icon { --mdc-icon-size: 24px; vertical-align: -3px; }
   .hp-boost .v { color: var(--success-color, #43a047); }
   .hp-hold_back .v { color: var(--warning-color, #f57c00); }
+  .hp-plan span.hp-boost { color: var(--success-color, #43a047); }
+  .hp-plan span.hp-hold_back { color: var(--warning-color, #f57c00); }
+  .card h4 { margin: 14px 0 4px; font-size: 14px; }
   .ok-text { color: var(--success-color, #43a047); font-weight:500; }
   code { font-size:12px; background: var(--secondary-background-color); padding:1px 4px; border-radius:4px; }
   .dayslider { position:relative; height:44px; margin:10px 10px 0; }

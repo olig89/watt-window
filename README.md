@@ -158,6 +158,17 @@ Your house and hot-water tank can work like a battery: store heat when power is 
 
 It stays in a mode for at least 60 minutes by default, so the compressor isn't cycled. Watt Window never touches the heat pump: your automation decides what each state means.
 
+### Plan the day
+
+The default advice looks only as far ahead as stored heat stays useful. Switch the planner to **Plan the day** and Watt Window plans boost, normal and hold back over every price it knows (up to about a day and a half), from:
+
+- the outdoor temperature forecast of a weather entity;
+- how much electricity your heat pump uses per degree-day, and the outdoor temperature where heating stops. **Suggest from history** works both out from your heat pump's heating energy sensor and an outdoor sensor;
+- your house as a heat store: it can coast for the hours you set (at 0 °C outside, shorter when colder), and a boost banks a share of that. Rooms already at their setpoint take no extra heat, so that share is usually well under half;
+- what a boost costs in efficiency (5 % by default; a higher flow temperature costs about 3 % per degree on many heat pumps).
+
+Boosts and hold backs come in blocks of at least 2 hours, a boost lasts at most 4 hours, and the plan is redone every quarter-hour. The states are the same, so an automation written for the default advice keeps working. The sensor's `plan` attribute lists the coming blocks. With a ground-loop brine sensor, it also skips boosts while the brine is cold. How it works: [docs/heat-pump-plan.md](docs/heat-pump-plan.md).
+
 ```yaml
 automation:
   - alias: Heat pump follows Watt Window
