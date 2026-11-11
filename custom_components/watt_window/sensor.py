@@ -229,6 +229,8 @@ class HeatPumpAdviceSensor(_Base):
     _attr_translation_key = "heat_pump_advice"
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_options = [BOOST, NORMAL, HOLD_BACK]
+    # The plan changes every quarter-hour and is long: keep it out of history.
+    _unrecorded_attributes = frozenset({"plan", "plan_made_at", "store_kwh"})
 
     def __init__(self, coord) -> None:
         super().__init__(coord, "heat_pump_advice")
@@ -246,5 +248,8 @@ class HeatPumpAdviceSensor(_Base):
     @property
     def extra_state_attributes(self):
         d = self.coordinator.heat_pump.as_dict()
-        return {k: d[k] for k in ("reason", "since", "price_now", "average_ahead", "cheapest_ahead",
-                                  "cheapest_at", "hours_ahead_known", "store_hours", "margin")}
+        keys = ("reason", "since", "price_now", "average_ahead", "cheapest_ahead",
+                "cheapest_at", "hours_ahead_known", "store_hours", "margin", "planner")
+        plan_keys = ("plan", "plan_made_at", "store_kwh", "store_limit_kwh", "bank_limit_kwh", "need_kwh",
+                     "outdoor_average", "plan_saving")
+        return {k: d[k] for k in keys + plan_keys if k in d}

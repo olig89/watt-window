@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import voluptuous as vol
@@ -19,8 +20,31 @@ from .const import (
     CONF_LOAD_W,
     CONF_PLANES,
     CONF_SOLAR_ENTRIES,
+    CONF_HP_BALANCE_TEMP,
+    CONF_HP_BANK_HOURS,
+    CONF_HP_BANK_SHARE,
+    CONF_HP_BOOST_PENALTY,
+    CONF_HP_BRINE_ENTITY,
+    CONF_HP_BRINE_MIN,
     CONF_HP_ENABLED,
+    CONF_HP_ENERGY_ENTITY,
+    CONF_HP_KWH_PER_DD,
     CONF_HP_MARGIN,
+    CONF_HP_MAX_BOOST_HOURS,
+    CONF_HP_MIN_BLOCK_HOURS,
+    CONF_HP_OUTDOOR_ENTITY,
+    CONF_HP_PLANNER,
+    CONF_HP_WEATHER_ENTITY,
+    DEFAULT_HP_BALANCE_TEMP,
+    DEFAULT_HP_BANK_HOURS,
+    DEFAULT_HP_BANK_SHARE,
+    DEFAULT_HP_BOOST_PENALTY,
+    DEFAULT_HP_BRINE_MIN,
+    DEFAULT_HP_KWH_PER_DD,
+    DEFAULT_HP_MAX_BOOST_HOURS,
+    DEFAULT_HP_MIN_BLOCK_HOURS,
+    PLANNER_LOOK_AHEAD,
+    PLANNERS,
     CONF_HP_MIN_MINUTES,
     CONF_HP_POWER_W,
     CONF_HP_STORE_HOURS,
@@ -54,6 +78,7 @@ from .const import (
     solar_entry_label,
     window_label,
 )
+from .core.heatplan import fit_heat_need
 from .sources.solar import solar_source_kind
 from .validation import SOLAR_SOURCES, SettingsError, clean_day_hours, clean_planes, clean_tariff, clean_windows
 
@@ -62,6 +87,7 @@ from .validation import SOLAR_SOURCES, SettingsError, clean_day_hours, clean_pla
 def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_data)
     websocket_api.async_register_command(hass, ws_save)
+    websocket_api.async_register_command(hass, ws_heat_need_fit)
 
 
 def _entry(hass: HomeAssistant):
@@ -76,6 +102,26 @@ def _power_sensors(hass: HomeAssistant) -> list[dict]:
         if st.attributes.get("device_class") == "power" or st.attributes.get("unit_of_measurement") in ("W", "kW"):
             out.append({"entity_id": st.entity_id, "name": st.attributes.get("friendly_name") or st.entity_id})
     return sorted(out, key=lambda o: o["name"].lower())
+
+
+def _entities(hass: HomeAssistant, domain: str, keep=lambda st: True) -> list[dict]:
+    out = [
+        {"entity_id": st.entity_id, "name": st.attributes.get("friendly_name") or st.entity_id}
+        for st in hass.states.async_all(domain)
+        if keep(st)
+    ]
+    return sorted(out, key=lambda o: o["name"].lower())
+
+
+def _heat_pump_sensors(hass: HomeAssistant) -> dict:
+    """Entities the heat pump settings can pick from."""
+    return {
+        "weather": _entities(hass, "weather"),
+        "energy": _entities(hass, "sensor", lambda st: st.attributes.get("device_class") == "energy"
+                            or st.attributes.get("unit_of_measurement") in ("kWh", "Wh", "MWh")),
+        "temperature": _entities(hass, "sensor", lambda st: st.attributes.get("device_class") == "temperature"
+                                 or st.attributes.get("unit_of_measurement") in ("°C", "°F")),
+    }
 
 
 def _iso(t) -> str | None:
@@ -180,6 +226,20 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
                 "heat_pump_store_hours": s.get(CONF_HP_STORE_HOURS, DEFAULT_HP_STORE_HOURS),
                 "heat_pump_margin": s.get(CONF_HP_MARGIN, DEFAULT_HP_MARGIN),
                 "heat_pump_min_minutes": s.get(CONF_HP_MIN_MINUTES, DEFAULT_HP_MIN_MINUTES),
+                "heat_pump_planner": s.get(CONF_HP_PLANNER, PLANNER_LOOK_AHEAD),
+                "heat_pump_weather_entity": s.get(CONF_HP_WEATHER_ENTITY) or coord.heat_pump.weather_entity,
+                "heat_pump_kwh_per_degree_day": s.get(CONF_HP_KWH_PER_DD, DEFAULT_HP_KWH_PER_DD),
+                "heat_pump_balance_temp": s.get(CONF_HP_BALANCE_TEMP, DEFAULT_HP_BALANCE_TEMP),
+                "heat_pump_boost_penalty": s.get(CONF_HP_BOOST_PENALTY, DEFAULT_HP_BOOST_PENALTY),
+                "heat_pump_min_block_hours": s.get(CONF_HP_MIN_BLOCK_HOURS, DEFAULT_HP_MIN_BLOCK_HOURS),
+                "heat_pump_brine_entity": s.get(CONF_HP_BRINE_ENTITY),
+                "heat_pump_max_boost_hours": s.get(CONF_HP_MAX_BOOST_HOURS, DEFAULT_HP_MAX_BOOST_HOURS),
+                "heat_pump_brine_min": s.get(CONF_HP_BRINE_MIN, DEFAULT_HP_BRINE_MIN),
+                "heat_pump_bank_share": s.get(CONF_HP_BANK_SHARE, DEFAULT_HP_BANK_SHARE),
+                "heat_pump_bank_hours": s.get(CONF_HP_BANK_HOURS, DEFAULT_HP_BANK_HOURS),
+                "heat_pump_energy_entity": s.get(CONF_HP_ENERGY_ENTITY),
+                "heat_pump_outdoor_entity": s.get(CONF_HP_OUTDOOR_ENTITY),
+                "heat_pump_sensors": _heat_pump_sensors(hass),
                 "spare_grid_entity": s.get(CONF_SPARE_GRID_ENTITY),
                 "spare_grid_import_negative": bool(s.get(CONF_SPARE_GRID_IMPORT_NEGATIVE, False)),
                 "spare_solar_entity": s.get(CONF_SPARE_SOLAR_ENTITY),
@@ -215,6 +275,19 @@ async def ws_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
         vol.Optional("heat_pump_store_hours"): vol.Coerce(float),
         vol.Optional("heat_pump_margin"): vol.Coerce(float),
         vol.Optional("heat_pump_min_minutes"): vol.Coerce(float),
+        vol.Optional("heat_pump_planner"): vol.In(PLANNERS),
+        vol.Optional("heat_pump_weather_entity"): vol.Any(None, str),
+        vol.Optional("heat_pump_kwh_per_degree_day"): vol.Coerce(float),
+        vol.Optional("heat_pump_balance_temp"): vol.Coerce(float),
+        vol.Optional("heat_pump_boost_penalty"): vol.Coerce(float),
+        vol.Optional("heat_pump_min_block_hours"): vol.Coerce(float),
+        vol.Optional("heat_pump_brine_entity"): vol.Any(None, str),
+        vol.Optional("heat_pump_max_boost_hours"): vol.Coerce(float),
+        vol.Optional("heat_pump_brine_min"): vol.Coerce(float),
+        vol.Optional("heat_pump_bank_share"): vol.Coerce(float),
+        vol.Optional("heat_pump_bank_hours"): vol.Coerce(float),
+        vol.Optional("heat_pump_energy_entity"): vol.Any(None, str),
+        vol.Optional("heat_pump_outdoor_entity"): vol.Any(None, str),
         vol.Optional("spare_grid_entity"): vol.Any(None, str),
         vol.Optional("spare_grid_import_negative"): bool,
         vol.Optional("spare_solar_entity"): vol.Any(None, str),
@@ -263,12 +336,19 @@ async def ws_save(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
             (CONF_SPARE_OFF_MIN, 0, 60), (CONF_SPARE_NEAR_ZERO_W, 0, 5000),
             (CONF_HP_POWER_W, 100, 50000), (CONF_HP_STORE_HOURS, 1, 24),
             (CONF_HP_MARGIN, 0, 1), (CONF_HP_MIN_MINUTES, 0, 240),
+            (CONF_HP_KWH_PER_DD, 0.05, 100), (CONF_HP_BALANCE_TEMP, 5, 25),
+            (CONF_HP_BOOST_PENALTY, 0, 0.5), (CONF_HP_MIN_BLOCK_HOURS, 0.25, 8),
+            (CONF_HP_MAX_BOOST_HOURS, 1, 24), (CONF_HP_BRINE_MIN, -15, 15),
+            (CONF_HP_BANK_SHARE, 0, 1), (CONF_HP_BANK_HOURS, 0.5, 12),
         ):
             if key in msg:
                 if not lo <= msg[key] <= hi:
                     raise SettingsError("bad_spare", key)
                 options[key] = msg[key]
-        for key in (CONF_SPARE_GRID_ENTITY, CONF_SPARE_SOLAR_ENTITY):
+        if "heat_pump_planner" in msg:
+            options[CONF_HP_PLANNER] = msg["heat_pump_planner"]
+        for key in (CONF_SPARE_GRID_ENTITY, CONF_SPARE_SOLAR_ENTITY, CONF_HP_WEATHER_ENTITY,
+                    CONF_HP_BRINE_ENTITY, CONF_HP_ENERGY_ENTITY, CONF_HP_OUTDOOR_ENTITY):
             if key in msg:
                 if msg[key] and hass.states.get(msg[key]) is None:
                     raise SettingsError("bad_spare_sensor", key)
@@ -295,3 +375,55 @@ async def ws_save(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
         return
     hass.config_entries.async_update_entry(entry, options=options)
     connection.send_result(msg["id"], {"saved": True})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/heat_need_fit",
+        vol.Required("energy_entity"): str,
+        vol.Required("outdoor_entity"): str,
+        vol.Optional("days", default=45): vol.All(vol.Coerce(int), vol.Range(min=7, max=365)),
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_heat_need_fit(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
+    """Suggest kWh per degree-day and the heating cut-off from the recorder's daily statistics."""
+    try:
+        days = await async_daily_heat_use(hass, msg["energy_entity"], msg["outdoor_entity"], msg["days"])
+    except Exception as err:  # noqa: BLE001 - recorder missing or no statistics
+        connection.send_error(msg["id"], "no_history", str(err))
+        return
+    fit = fit_heat_need(days)
+    connection.send_result(
+        msg["id"],
+        {
+            "days_found": len(days),
+            "fit": None if fit is None else {
+                "kwh_per_degree_day": round(fit.kwh_per_degree_day, 2),
+                "balance_temp": round(fit.balance_temp, 1),
+                "r2": round(fit.r2, 2),
+                "days": fit.days,
+            },
+        },
+    )
+
+
+async def async_daily_heat_use(hass: HomeAssistant, energy: str, outdoor: str, days: int) -> list[tuple[float, float]]:
+    """(mean outdoor °C, heating kWh) per whole local day, from long-term statistics."""
+    from homeassistant.components.recorder import get_instance
+    from homeassistant.components.recorder.statistics import statistics_during_period
+    from homeassistant.util import dt as dt_util
+
+    end = dt_util.start_of_local_day()
+    start = end - timedelta(days=days)
+    stats = await get_instance(hass).async_add_executor_job(
+        statistics_during_period, hass, start, end, {energy, outdoor}, "day", None, {"change", "mean"}
+    )
+    temps = {row["start"]: row.get("mean") for row in stats.get(outdoor, [])}
+    out = []
+    for row in stats.get(energy, []):
+        t = temps.get(row["start"])
+        if t is not None and row.get("change") is not None:
+            out.append((float(t), float(row["change"])))
+    return out
