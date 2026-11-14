@@ -132,6 +132,47 @@ automation:
           entity_id: input_boolean.dishwasher_loaded
 ```
 
+## Action: find a window on request
+
+`watt_window.find_window` finds the cheapest window of any length, right now, and hands it back as response data. It suits appliances with their own delay timer: one button works out the delay and sets it, so nothing has to stay running in Home Assistant.
+
+| Field | |
+|---|---|
+| `duration` | How long the programme runs, e.g. `"03:30:00"` (15 min to 24 h) |
+| `start_after` | Optional. Don't start before this |
+| `start_by` | Optional. Start no later than this |
+| `finish_by` | Optional. Be finished by this, e.g. `"07:00"` for clean dishes in the morning |
+| `watts` | Optional. Average draw while running; decides how much solar can cover. Defaults to the appliance power on the Settings tab |
+
+A time of day means its next occurrence (at 21:00, `"07:00"` is tomorrow morning); a full date-time also works. The response has `found`, `start`, `end`, `starts_in_seconds`, `starts_in_minutes`, `latest_same_price_start`, `average_price`, `estimated_cost`, `start_now_cost`, `saving` (vs starting now) and `settled` (true once every price the limits allow is published, so the answer can't move). When nothing fits, `found` is false and `reason` says why: `too_short` (the limits leave too little time) or `no_prices` (prices that far ahead aren't out yet).
+
+```yaml
+script:
+  dishwasher_cheapest_overnight:
+    alias: Dishwasher in the cheapest 3.5 hours, done by 07:00
+    sequence:
+      - action: watt_window.find_window
+        data:
+          duration: "03:30:00"
+          finish_by: "07:00"
+        response_variable: w
+      - condition: template
+        value_template: "{{ w.found }}"
+      # Home Connect's delayed start, in seconds:
+      - action: home_connect.start_selected_program
+        data:
+          device_id: YOUR_DISHWASHER_DEVICE_ID
+          b_s_h_common_option_start_in_relative: "{{ w.starts_in_seconds }}"
+      - action: notify.notify
+        data:
+          message: >-
+            Dishwasher starts {{ as_timestamp(w.start) | timestamp_custom('%H:%M') }},
+            done by {{ as_timestamp(w.end) | timestamp_custom('%H:%M') }}
+            (saves about {{ (w.saving * 100) | round(0) }} c).
+```
+
+Appliances often take their delay in steps (say 30 minutes): round `starts_in_seconds` to a step between `start` and `latest_same_price_start` and it still costs the same.
+
 ## Spare solar now
 
 Watt Windows plan ahead from forecasts. **Spare solar now** watches what's actually happening, and tells you when there's solar to spare right now:

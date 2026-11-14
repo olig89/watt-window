@@ -1,0 +1,27 @@
+find_window:
+  fields:
+    duration:
+      required: true
+      example: "03:30:00"
+      selector:
+        duration:
+    start_after:
+      example: "22:00:00"
+      selector:
+        time:
+    start_by:
+      example: "02:00:00"
+      selector:
+        time:
+    finish_by:
+      example: "07:00:00"
+      selector:
+        time:
+    watts:
+      example: 400
+      selector:
+        number:
+          min: 1
+          max: 50000
+          unit_of_measurement: W
+          mode: box

@@ -25,7 +25,7 @@
 // lane_labels: times                   times (after each lane) or none
 // show_legend: true
 
-const CARD_VERSION = "0.19.1";
+const CARD_VERSION = "0.20.0";
 const LANE_COLOUR = "#5b8fd1";
 const BANDS = {
   solar: "#f7cf45",

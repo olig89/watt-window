@@ -109,9 +109,11 @@ def cheapest_window(
     base_load_w: float = 0.0,
     earliest: datetime | None = None,
     latest_end: datetime | None = None,
+    latest_start: datetime | None = None,
 ) -> Window | None:
     """The contiguous run of quarters of total ``length`` with the lowest
-    average effective price, starting at or after ``earliest``.
+    average effective price, starting at or after ``earliest``, starting no
+    later than ``latest_start`` and ending by ``latest_end``.
 
     Ties go to the earliest start. Returns None when the known horizon is
     shorter than the window.
@@ -125,6 +127,8 @@ def cheapest_window(
     prices = [q.effective_price(load_w, base_load_w) for q in qs]
     averages: dict[int, float] = {}
     for i in range(len(qs) - n + 1):
+        if latest_start is not None and qs[i].start > latest_start:
+            break  # quarters are in time order: every later start is too late too
         run = qs[i : i + n]
         if any(b.start != a.end for a, b in zip(run, run[1:])):
             continue  # a gap in the data: not a real contiguous window
@@ -153,3 +157,22 @@ def cheapest_window(
         cost=sum(p * kwh_per_quarter for p in prices[i : i + n]),
         latest_start=qs[last].start,
     )
+
+
+def window_at(
+    quarters: Sequence[Quarter],
+    start: datetime,
+    length: timedelta,
+    load_w: float,
+    base_load_w: float = 0.0,
+) -> Window | None:
+    """The window of ``length`` that starts exactly at ``start`` (e.g. "start now"),
+    or None when its prices aren't all known."""
+    n = max(1, round(length / QUARTER))
+    for i, q in enumerate(quarters):
+        if q.start == start:
+            run = list(quarters[i : i + n])
+            if len(run) < n or any(b.start != a.end for a, b in zip(run, run[1:])):
+                return None
+            return cheapest_window(run, length, load_w, base_load_w)
+    return None

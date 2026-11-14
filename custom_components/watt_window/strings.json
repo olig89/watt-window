@@ -239,5 +239,38 @@
         "name": "Spare solar for your appliance"
       }
     }
+  },
+  "services": {
+    "find_window": {
+      "name": "Find a Watt Window",
+      "description": "Finds the cheapest window of any length from now on, within optional time limits, and returns it as response data (start, end, how long until it starts, cost and saving). Times of day mean their next occurrence; full date-times also work in YAML.",
+      "fields": {
+        "duration": {
+          "name": "Length",
+          "description": "How long the appliance runs, e.g. 3:30 for a 3.5-hour programme."
+        },
+        "start_after": {
+          "name": "Start after",
+          "description": "Don't start before this time (e.g. not before 22:00 for a noisy machine)."
+        },
+        "start_by": {
+          "name": "Start by",
+          "description": "Start no later than this time."
+        },
+        "finish_by": {
+          "name": "Finish by",
+          "description": "Be finished by this time (e.g. 07:00 for clean dishes in the morning)."
+        },
+        "watts": {
+          "name": "Average power",
+          "description": "The appliance's average draw while running. Decides how much of it solar can cover. Defaults to the appliance power on the Settings tab."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "not_loaded": {
+      "message": "Watt Window isn't set up or has no prices yet."
+    }
   }
 }

@@ -15,6 +15,7 @@ from homeassistant.helpers.typing import ConfigType
 from .const import DOMAIN, NAME, PANEL_COMPONENT, PANEL_URL, STATIC_URL
 from .coordinator import WattWindowCoordinator
 from .advisor import HeatPumpAdvisor
+from .services import async_setup_services
 from .spare import SpareMonitor
 from .websocket import async_register_websocket
 
@@ -27,6 +28,7 @@ type WattWindowConfigEntry = ConfigEntry[WattWindowCoordinator]
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async_register_websocket(hass)
+    async_setup_services(hass)
     # Serve the dashboard card as soon as Home Assistant loads us, not after the first price
     # fetch: a dashboard opened during startup (or while the entry retries) would otherwise get
     # a 404 for the card and show a configuration error until it is reloaded.
