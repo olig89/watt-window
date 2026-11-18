@@ -227,9 +227,9 @@ class SpareSolarSensor(_Base):
 class HeatPumpAdviceSensor(_Base, RestoreEntity):
     """boost / normal / hold_back. Your automation decides what each means for your heat pump.
 
-    A RestoreEntity so Home Assistant saves its last state. The advisor reads that
-    back when it starts, before the first plan: ``since`` (kept when the advice is
-    the same) and the plan's heat store (``store_kwh``).
+    A RestoreEntity: when added it hands its state from before a restart to the
+    advisor (``since``, kept when the advice is the same, and the plan's heat store
+    ``store_kwh``). The advisor's first plan waits for that.
     """
 
     _attr_translation_key = "heat_pump_advice"
@@ -243,6 +243,8 @@ class HeatPumpAdviceSensor(_Base, RestoreEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        # Only Home Assistant's public restore API: its internals change between versions.
+        self.coordinator.heat_pump.restore_from(await self.async_get_last_state())
         self.async_on_remove(
             async_dispatcher_connect(self.hass, heat_pump_signal(self.coordinator.config_entry.entry_id), self.async_write_ha_state)
         )
