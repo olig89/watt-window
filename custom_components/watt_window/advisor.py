@@ -19,6 +19,7 @@ import math
 from datetime import datetime, timedelta
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er, restore_state
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
@@ -137,6 +138,7 @@ class HeatPumpAdvisor:
         # The store and the current mode survive a reload (saving settings reloads the
         # entry), not a restart.
         saved = hass.data.get(f"{DOMAIN}_hp_store", {}).get(self.entry_id)
+        self._restarted = saved is None  # nothing in memory: a fresh start, so look at restore data
         self.store = saved["store"] if saved else 0.0
         self._store_at: datetime | None = saved["store_at"] if saved else None
         if saved and saved["mode"]:
@@ -151,6 +153,13 @@ class HeatPumpAdvisor:
     def async_start(self) -> None:
         if not self.enabled:
             return
+        # After a restart, take the store back first: Home Assistant starts tasks eagerly,
+        # so the forecast task below can make the first plan before this method returns.
+        # The old since only once the first advice is known.
+        last = self._last_state() if self._restarted else None
+        if last is not None:
+            # store_kwh changes every minute while it is not 0, so last_updated is when it was last true.
+            self.restore_store(last.attributes.get("store_kwh"), last.last_updated)
         self._unsubs.append(self.coordinator.async_add_listener(self._on_prices))
         self._unsubs.append(async_dispatcher_connect(self.hass, spare_signal(self.entry_id), self._update))
         self._unsubs.append(async_track_time_interval(self.hass, self._on_tick, timedelta(minutes=1)))
@@ -160,6 +169,15 @@ class HeatPumpAdvisor:
             self._unsubs.append(async_track_time_interval(self.hass, self._on_forecast_tick, FORECAST_EVERY))
             self.hass.async_create_background_task(self._async_refresh_forecast(), f"{DOMAIN} forecast")
         self._update()
+        if last is not None:
+            since = dt_util.parse_datetime(str(last.attributes.get("since") or ""))
+            self.restore_since(last.state, dt_util.as_utc(since) if since else None)
+
+    def _last_state(self):
+        """The advice sensor's state from before the restart (Home Assistant's restore data)."""
+        entity_id = er.async_get(self.hass).async_get_entity_id("sensor", DOMAIN, f"{self.entry_id}_heat_pump_advice")
+        stored = restore_state.async_get(self.hass).last_states.get(entity_id) if entity_id else None
+        return stored.state if stored else None
 
     @callback
     def async_stop(self) -> None:
@@ -344,7 +362,6 @@ class HeatPumpAdvisor:
             return False
         lo, hi = -self.plan_settings.store_limit, self.plan_settings.bank_limit
         self.store, self._store_at = max(lo, min(hi, value)), dt_util.utcnow()
-        self._schedule_replan()  # a plan made before this saw an empty store
         return True
 
     def plan_dict(self) -> dict:
