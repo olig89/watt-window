@@ -12,7 +12,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .cleanup import remove_stale_entities
 from .const import CONF_BASE_LOAD_W, CONF_LOAD_W, DEFAULT_BASE_LOAD_W, DEFAULT_LOAD_W, DOMAIN, NAME, window_label
@@ -223,8 +225,11 @@ class SpareSolarSensor(_Base):
         }
 
 
-class HeatPumpAdviceSensor(_Base):
-    """boost / normal / hold_back. Your automation decides what each means for your heat pump."""
+class HeatPumpAdviceSensor(_Base, RestoreEntity):
+    """boost / normal / hold_back. Your automation decides what each means for your heat pump.
+
+    Restores ``since`` after a restart when the advice is the same as before it.
+    """
 
     _attr_translation_key = "heat_pump_advice"
     _attr_device_class = SensorDeviceClass.ENUM
@@ -237,6 +242,9 @@ class HeatPumpAdviceSensor(_Base):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        if (last := await self.async_get_last_state()) is not None:
+            since = dt_util.parse_datetime(str(last.attributes.get("since") or ""))
+            self.coordinator.heat_pump.restore_since(last.state, dt_util.as_utc(since) if since else None)
         self.async_on_remove(
             async_dispatcher_connect(self.hass, heat_pump_signal(self.coordinator.config_entry.entry_id), self.async_write_ha_state)
         )

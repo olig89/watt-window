@@ -309,6 +309,21 @@ class HeatPumpAdvisor:
     def mode(self) -> str | None:
         return self.sticky.mode
 
+    @callback
+    def restore_since(self, mode: str | None, since: datetime | None) -> bool:
+        """After a restart: keep the old ``since`` when the advice is still the same.
+
+        Automations time boost and hold back caps from ``since``; a restart that
+        changes nothing about the advice shouldn't restart their clocks. A different
+        mode keeps its new ``since``. Returns True when the old one was kept.
+        """
+        if mode is None or since is None or mode != self.sticky.mode or self.sticky.since is None:
+            return False
+        if not since < self.sticky.since <= dt_util.utcnow() + timedelta(minutes=1):
+            return False  # nothing older to keep, or a clock that jumped
+        self.sticky.since = since
+        return True
+
     def plan_dict(self) -> dict:
         if not self.planning:
             return {}

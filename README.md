@@ -197,7 +197,7 @@ Your house and hot-water tank can work like a battery: store heat when power is 
 - **boost** when there's spare solar right now, or now is at least that much cheaper than the hours ahead;
 - **normal** otherwise.
 
-It stays in a mode for at least 60 minutes by default, so the compressor isn't cycled. Watt Window never touches the heat pump: your automation decides what each state means.
+It stays in a mode for at least 60 minutes by default, so the compressor isn't cycled. Watt Window never touches the heat pump: your automation decides what each state means. The `since` attribute says when the current advice started; it carries over a restart when the advice is the same after it, so an automation can time how long a boost or hold back has run.
 
 ### Plan the day
 
