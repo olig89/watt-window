@@ -123,6 +123,12 @@ each minute. A reload (saving settings) keeps it; after a restart S starts at
 0. If the house automation ends a hold back early (rooms too cold), S reaches
 −C and the plan pays the debt back: the model and the house agree again.
 
+**`since` across a restart.** The advice sensor restores its last state. When
+the advice after a restart is the same as before it, `since` keeps its old
+value, so automations that cap a boost or hold back by its age don't start
+counting again. A different advice gets a new `since`. (A reload keeps the
+mode and `since` in memory instead.)
+
 ## Ground loop (optional)
 
 A ground source heat pump's efficiency barely changes through the day, so
