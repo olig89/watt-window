@@ -561,7 +561,7 @@ class WattWindowPanel extends HTMLElement {
         heat_pump_boost_penalty_pct: +(s.heat_pump_boost_penalty * 100).toFixed(1),
         heat_pump_min_block_hours: s.heat_pump_min_block_hours,
         heat_pump_max_boost_hours: s.heat_pump_max_boost_hours,
-        heat_pump_bank_share_pct: Math.round(s.heat_pump_bank_share * 100),
+        heat_pump_bank_share_pct: +(s.heat_pump_bank_share * 100).toFixed(1),
         heat_pump_bank_hours: s.heat_pump_bank_hours,
         heat_pump_brine_entity: s.heat_pump_brine_entity || "",
         heat_pump_brine_min: s.heat_pump_brine_min,

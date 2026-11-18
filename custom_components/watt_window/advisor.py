@@ -18,11 +18,13 @@ import logging
 import math
 from datetime import datetime, timedelta
 
+from homeassistant.const import UnitOfTemperature
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er, restore_state
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import (
     CONF_BASE_LOAD_W,
@@ -66,6 +68,7 @@ from .spare import signal as spare_signal
 
 _LOGGER = logging.getLogger(__name__)
 FORECAST_EVERY = timedelta(minutes=30)
+FORECAST_STALE = timedelta(hours=6)  # no fresh forecast for this long: stop planning on the old one
 PLAN_REASONS = {
     "boost": "Plan: store heat while it's cheap",
     "normal": "Plan: no shift worth making now",
@@ -127,6 +130,12 @@ class HeatPumpAdvisor:
         self.brine_cold = False
         self.forecast: Forecast | None = None
         self.forecast_error: str | None = None
+        self._forecast_at: datetime | None = None
+        # The weather entity the user picked; None means "the first one there is", looked
+        # up on every fetch (after a restart the weather integration may load later).
+        self._weather_choice = self.weather_entity
+        # (mode, since) from before a restart, until the first plan has decided the mode.
+        self._restored: tuple[str, datetime | None] | None = None
         self.plan: Plan | None = None
         self._planning = False
         self._replan_again = False
@@ -164,14 +173,17 @@ class HeatPumpAdvisor:
         self._unsubs.append(async_dispatcher_connect(self.hass, spare_signal(self.entry_id), self._update))
         self._unsubs.append(async_track_time_interval(self.hass, self._on_tick, timedelta(minutes=1)))
         if self.planning:
-            if not self.weather_entity:
-                self.weather_entity = default_weather_entity(self.hass)
+            self.weather_entity = self._weather_choice or default_weather_entity(self.hass)
             self._unsubs.append(async_track_time_interval(self.hass, self._on_forecast_tick, FORECAST_EVERY))
             self.hass.async_create_background_task(self._async_refresh_forecast(), f"{DOMAIN} forecast")
         self._update()
         if last is not None:
             since = dt_util.parse_datetime(str(last.attributes.get("since") or ""))
-            self.restore_since(last.state, dt_util.as_utc(since) if since else None)
+            since = dt_util.as_utc(since) if since else None
+            self.restore_since(last.state, since)
+            if self.planning and self._provisional:
+                # The first plan may still change the mode; try again once it has.
+                self._restored = (last.state, since)
 
     def _last_state(self):
         """The advice sensor's state from before the restart (Home Assistant's restore data)."""
@@ -203,16 +215,22 @@ class HeatPumpAdvisor:
 
     async def _async_refresh_forecast(self) -> None:
         points = await self._async_fetch_forecast()
+        now = dt_util.utcnow()
         if points:
-            self.forecast, self.forecast_error = Forecast(points), None
+            self.forecast, self.forecast_error, self._forecast_at = Forecast(points), None, now
+        elif self.forecast is not None and self._forecast_at is not None and now - self._forecast_at > FORECAST_STALE:
+            # Don't plan on an old forecast for ever: fall back to look ahead until a new one comes.
+            self.forecast, self.plan = None, None
         self._schedule_replan()
         self._update()
 
     async def _async_fetch_forecast(self) -> list[tuple[datetime, float]]:
-        entity = self.weather_entity
-        if not entity or self.hass.states.get(entity) is None:
+        entity = self.weather_entity = self._weather_choice or default_weather_entity(self.hass)
+        state = self.hass.states.get(entity) if entity else None
+        if state is None:
             self.forecast_error = "No weather entity for the temperature forecast"
             return []
+        fahrenheit = state.attributes.get("temperature_unit") == UnitOfTemperature.FAHRENHEIT
         for kind in ("hourly", "twice_daily", "daily"):
             try:
                 resp = await self.hass.services.async_call(
@@ -227,6 +245,8 @@ class HeatPumpAdvisor:
                 t = dt_util.parse_datetime(str(row.get("datetime", "")))
                 temp = row.get("temperature")
                 if t is not None and isinstance(temp, (int, float)):
+                    if fahrenheit:  # heat need settings are in °C
+                        temp = TemperatureConverter.convert(temp, UnitOfTemperature.FAHRENHEIT, UnitOfTemperature.CELSIUS)
                     points.append((dt_util.as_utc(t), float(temp)))
             if points:
                 return points
@@ -297,6 +317,10 @@ class HeatPumpAdvisor:
             if advice.mode != self.sticky.mode:
                 self.sticky.force(now, advice.mode)
             self._provisional = False
+            if self._restored is not None:
+                # After a restart: if the plan carries on with the advice from before it, keep that since.
+                self.restore_since(*self._restored)
+                self._restored = None
         else:
             since = self.sticky.since
             self.sticky.update(now, advice.mode)

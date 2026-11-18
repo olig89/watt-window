@@ -199,7 +199,7 @@ def test_brine_guard_has_hysteresis():
 
 def test_quarters_in_mode():
     assert quarters_in_mode(None, T0) == 0
-    assert quarters_in_mode(T0, T0) == 1
+    assert quarters_in_mode(T0, T0) == 0  # in its first quarter
     assert quarters_in_mode(T0 - 50 * timedelta(minutes=1), T0) == 3
 
 
@@ -214,3 +214,15 @@ def test_fit_heat_need_refuses_thin_data():
     assert fit_heat_need([(5.0, 10.0)] * 3) is None  # too few days
     assert fit_heat_need([(5.0, 10.0), (5.2, 11.0)] * 5) is None  # no spread in temperature
     assert fit_heat_need([(t, t) for t in range(2, 12)]) is None  # rises with warmth: not heating
+
+
+def test_a_mode_started_this_quarter_runs_its_full_minimum():
+    # Started at the top of this quarter: 0 quarters done, so all 8 of the 2 h minimum are still to run.
+    plan = make_plan(day([10, 40, 40, 40, 40, 10, 10]), T0, flat(5), S, mode_now=BOOST, mode_quarters=0)
+    assert plan.block_at(T0).mode == BOOST
+    assert plan.blocks[0].end - T0 >= 8 * Q
+
+
+def test_fit_heat_need_refuses_a_cut_off_outside_what_settings_allow():
+    # A line through these points stops heating at about 40 °C: not a usable cut-off (settings take 5–25 °C).
+    assert fit_heat_need([(t, 0.5 * (40 - t)) for t in range(2, 12)]) is None

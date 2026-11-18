@@ -254,7 +254,8 @@ def make_plan(
 
     # Forward pass from the real store level, choosing with one-step look-ahead.
     mode = mode_now if mode_now in MODES else NORMAL
-    age = min(max(mode_quarters, 1), caps[mode]) if mode_now in MODES else caps[mode]
+    # Age 0 (started this quarter) is only ever the starting point: staying makes it 1.
+    age = min(max(mode_quarters, 0), caps[mode]) if mode_now in MODES else caps[mode]
     s = max(-c, min(bank, store_now))
     chosen: list[str] = []
     cost = 0.0
@@ -301,10 +302,10 @@ def make_plan(
 
 
 def quarters_in_mode(since: datetime | None, now: datetime) -> int:
-    """Whole quarters the current mode has run (at least 1)."""
+    """Whole quarters the current mode has run (0 in its first quarter)."""
     if since is None:
         return 0
-    return max(1, int((now - since) / QUARTER))
+    return max(0, int((now - since) / QUARTER))
 
 
 class BrineGuard:
@@ -353,6 +354,8 @@ def fit_heat_need(days: Sequence[tuple[float, float]], max_temp: float = 15.0, m
     if slope >= 0:
         return None
     intercept = me - slope * mt
+    if not 5.0 <= intercept / -slope <= 25.0:  # a cut-off the settings couldn't take
+        return None
     ss_res = sum((e - (intercept + slope * t)) ** 2 for t, e in pts)
     ss_tot = sum((e - me) ** 2 for e in es)
     return HeatNeedFit(
