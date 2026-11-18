@@ -19,3 +19,11 @@ def test_card_version_matches_manifest():
     js = (ROOT / "www" / "watt-window-card.js").read_text(encoding="utf-8")
     card = re.search(r'const CARD_VERSION = "([^"]+)"', js).group(1)
     assert card == manifest["version"]
+
+
+def test_only_public_restore_state_api():
+    # 0.20.2 read RestoreStateData.last_states, which Home Assistant 2026.11 doesn't have:
+    # the integration failed to start while the tests (on an older HA) passed.
+    for path in ROOT.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        assert "last_states" not in text and "RestoreStateData" not in text, path

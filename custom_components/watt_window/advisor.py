@@ -14,13 +14,13 @@ Two planners give the same states:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 from datetime import datetime, timedelta
 
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.helpers import entity_registry as er, restore_state
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
@@ -69,6 +69,7 @@ from .spare import signal as spare_signal
 _LOGGER = logging.getLogger(__name__)
 FORECAST_EVERY = timedelta(minutes=30)
 FORECAST_STALE = timedelta(hours=6)  # no fresh forecast for this long: stop planning on the old one
+RESTORE_WAIT = timedelta(seconds=30)  # after a restart, the longest a plan waits for the saved state
 PLAN_REASONS = {
     "boost": "Plan: store heat while it's cheap",
     "normal": "Plan: no shift worth making now",
@@ -147,7 +148,11 @@ class HeatPumpAdvisor:
         # The store and the current mode survive a reload (saving settings reloads the
         # entry), not a restart.
         saved = hass.data.get(f"{DOMAIN}_hp_store", {}).get(self.entry_id)
-        self._restarted = saved is None  # nothing in memory: a fresh start, so look at restore data
+        # After a restart the advice sensor hands back its saved state when it is added
+        # (restore_from). Plans wait for that, so none is made from an empty store.
+        self._restore_done = asyncio.Event()
+        if saved is not None:  # a reload: the state above is current, nothing to wait for
+            self._restore_done.set()
         self.store = saved["store"] if saved else 0.0
         self._store_at: datetime | None = saved["store_at"] if saved else None
         if saved and saved["mode"]:
@@ -162,13 +167,6 @@ class HeatPumpAdvisor:
     def async_start(self) -> None:
         if not self.enabled:
             return
-        # After a restart, take the store back first: Home Assistant starts tasks eagerly,
-        # so the forecast task below can make the first plan before this method returns.
-        # The old since only once the first advice is known.
-        last = self._last_state() if self._restarted else None
-        if last is not None:
-            # store_kwh changes every minute while it is not 0, so last_updated is when it was last true.
-            self.restore_store(last.attributes.get("store_kwh"), last.last_updated)
         self._unsubs.append(self.coordinator.async_add_listener(self._on_prices))
         self._unsubs.append(async_dispatcher_connect(self.hass, spare_signal(self.entry_id), self._update))
         self._unsubs.append(async_track_time_interval(self.hass, self._on_tick, timedelta(minutes=1)))
@@ -177,19 +175,28 @@ class HeatPumpAdvisor:
             self._unsubs.append(async_track_time_interval(self.hass, self._on_forecast_tick, FORECAST_EVERY))
             self.hass.async_create_background_task(self._async_refresh_forecast(), f"{DOMAIN} forecast")
         self._update()
-        if last is not None:
-            since = dt_util.parse_datetime(str(last.attributes.get("since") or ""))
-            since = dt_util.as_utc(since) if since else None
-            self.restore_since(last.state, since)
-            if self.planning and self._provisional:
-                # The first plan may still change the mode; try again once it has.
-                self._restored = (last.state, since)
 
-    def _last_state(self):
-        """The advice sensor's state from before the restart (Home Assistant's restore data)."""
-        entity_id = er.async_get(self.hass).async_get_entity_id("sensor", DOMAIN, f"{self.entry_id}_heat_pump_advice")
-        stored = restore_state.async_get(self.hass).last_states.get(entity_id) if entity_id else None
-        return stored.state if stored else None
+    @callback
+    def restore_from(self, last) -> None:
+        """The advice sensor's state from before a restart (None when there is none).
+
+        Called once, when the sensor is added. Takes the plan's heat store back and the
+        old ``since`` (when the advice is the same), then lets plans go ahead.
+        """
+        if self._restore_done.is_set():
+            return  # a reload: the in-memory state is newer
+        try:
+            if last is not None:
+                # store_kwh changes every minute while it is not 0, so last_updated is when it was last true.
+                self.restore_store(last.attributes.get("store_kwh"), last.last_updated)
+                since = dt_util.parse_datetime(str(last.attributes.get("since") or ""))
+                since = dt_util.as_utc(since) if since else None
+                self.restore_since(last.state, since)
+                if self.planning and self._provisional:
+                    # The first plan may still change the mode; try again once it has.
+                    self._restored = (last.state, since)
+        finally:
+            self._restore_done.set()
 
     @callback
     def async_stop(self) -> None:
@@ -270,6 +277,11 @@ class HeatPumpAdvisor:
                 data = self.coordinator.data
                 if data is None or not self.forecast:
                     return
+                if not self._restore_done.is_set():
+                    try:  # wait for the sensor's saved state; don't wait for ever if it never comes
+                        await asyncio.wait_for(self._restore_done.wait(), RESTORE_WAIT.total_seconds())
+                    except TimeoutError:
+                        self._restore_done.set()
                 now = dt_util.utcnow()
                 self._advance_store(now)
                 forecast, store = self.forecast, self.store
