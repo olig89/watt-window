@@ -324,6 +324,29 @@ class HeatPumpAdvisor:
         self.sticky.since = since
         return True
 
+    @callback
+    def restore_store(self, store: object, saved_at: datetime | None) -> bool:
+        """After a restart: pick the plan's heat store up where it was.
+
+        Without it the plan starts from an empty store and can end a boost or
+        hold back that is half done. After a long gap (more than ``store_hours``)
+        the house has drifted back to normal anyway, so the store stays at 0.
+        Returns True when the saved store was taken back.
+        """
+        if not self.planning or saved_at is None:
+            return False
+        try:
+            value = float(store)
+        except (TypeError, ValueError):
+            return False
+        gap = dt_util.utcnow() - saved_at
+        if not timedelta(0) <= gap <= timedelta(hours=self.store_hours) or value != value:
+            return False
+        lo, hi = -self.plan_settings.store_limit, self.plan_settings.bank_limit
+        self.store, self._store_at = max(lo, min(hi, value)), dt_util.utcnow()
+        self._schedule_replan()  # a plan made before this saw an empty store
+        return True
+
     def plan_dict(self) -> dict:
         if not self.planning:
             return {}

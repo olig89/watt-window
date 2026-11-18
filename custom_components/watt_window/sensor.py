@@ -228,7 +228,9 @@ class SpareSolarSensor(_Base):
 class HeatPumpAdviceSensor(_Base, RestoreEntity):
     """boost / normal / hold_back. Your automation decides what each means for your heat pump.
 
-    Restores ``since`` after a restart when the advice is the same as before it.
+    Restores ``since`` after a restart when the advice is the same as before it,
+    and the plan's heat store (``store_kwh``) so a half-done boost or hold back
+    isn't planned from an empty store.
     """
 
     _attr_translation_key = "heat_pump_advice"
@@ -245,6 +247,8 @@ class HeatPumpAdviceSensor(_Base, RestoreEntity):
         if (last := await self.async_get_last_state()) is not None:
             since = dt_util.parse_datetime(str(last.attributes.get("since") or ""))
             self.coordinator.heat_pump.restore_since(last.state, dt_util.as_utc(since) if since else None)
+            # store_kwh changes every minute while it's not 0, so last_updated is when it was last true.
+            self.coordinator.heat_pump.restore_store(last.attributes.get("store_kwh"), last.last_updated)
         self.async_on_remove(
             async_dispatcher_connect(self.hass, heat_pump_signal(self.coordinator.config_entry.entry_id), self.async_write_ha_state)
         )
