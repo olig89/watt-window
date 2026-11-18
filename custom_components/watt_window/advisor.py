@@ -18,10 +18,13 @@ import logging
 import math
 from datetime import datetime, timedelta
 
+from homeassistant.const import UnitOfTemperature
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er, restore_state
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import (
     CONF_BASE_LOAD_W,
@@ -65,6 +68,7 @@ from .spare import signal as spare_signal
 
 _LOGGER = logging.getLogger(__name__)
 FORECAST_EVERY = timedelta(minutes=30)
+FORECAST_STALE = timedelta(hours=6)  # no fresh forecast for this long: stop planning on the old one
 PLAN_REASONS = {
     "boost": "Plan: store heat while it's cheap",
     "normal": "Plan: no shift worth making now",
@@ -126,6 +130,12 @@ class HeatPumpAdvisor:
         self.brine_cold = False
         self.forecast: Forecast | None = None
         self.forecast_error: str | None = None
+        self._forecast_at: datetime | None = None
+        # The weather entity the user picked; None means "the first one there is", looked
+        # up on every fetch (after a restart the weather integration may load later).
+        self._weather_choice = self.weather_entity
+        # (mode, since) from before a restart, until the first plan has decided the mode.
+        self._restored: tuple[str, datetime | None] | None = None
         self.plan: Plan | None = None
         self._planning = False
         self._replan_again = False
@@ -137,6 +147,7 @@ class HeatPumpAdvisor:
         # The store and the current mode survive a reload (saving settings reloads the
         # entry), not a restart.
         saved = hass.data.get(f"{DOMAIN}_hp_store", {}).get(self.entry_id)
+        self._restarted = saved is None  # nothing in memory: a fresh start, so look at restore data
         self.store = saved["store"] if saved else 0.0
         self._store_at: datetime | None = saved["store_at"] if saved else None
         if saved and saved["mode"]:
@@ -151,15 +162,34 @@ class HeatPumpAdvisor:
     def async_start(self) -> None:
         if not self.enabled:
             return
+        # After a restart, take the store back first: Home Assistant starts tasks eagerly,
+        # so the forecast task below can make the first plan before this method returns.
+        # The old since only once the first advice is known.
+        last = self._last_state() if self._restarted else None
+        if last is not None:
+            # store_kwh changes every minute while it is not 0, so last_updated is when it was last true.
+            self.restore_store(last.attributes.get("store_kwh"), last.last_updated)
         self._unsubs.append(self.coordinator.async_add_listener(self._on_prices))
         self._unsubs.append(async_dispatcher_connect(self.hass, spare_signal(self.entry_id), self._update))
         self._unsubs.append(async_track_time_interval(self.hass, self._on_tick, timedelta(minutes=1)))
         if self.planning:
-            if not self.weather_entity:
-                self.weather_entity = default_weather_entity(self.hass)
+            self.weather_entity = self._weather_choice or default_weather_entity(self.hass)
             self._unsubs.append(async_track_time_interval(self.hass, self._on_forecast_tick, FORECAST_EVERY))
             self.hass.async_create_background_task(self._async_refresh_forecast(), f"{DOMAIN} forecast")
         self._update()
+        if last is not None:
+            since = dt_util.parse_datetime(str(last.attributes.get("since") or ""))
+            since = dt_util.as_utc(since) if since else None
+            self.restore_since(last.state, since)
+            if self.planning and self._provisional:
+                # The first plan may still change the mode; try again once it has.
+                self._restored = (last.state, since)
+
+    def _last_state(self):
+        """The advice sensor's state from before the restart (Home Assistant's restore data)."""
+        entity_id = er.async_get(self.hass).async_get_entity_id("sensor", DOMAIN, f"{self.entry_id}_heat_pump_advice")
+        stored = restore_state.async_get(self.hass).last_states.get(entity_id) if entity_id else None
+        return stored.state if stored else None
 
     @callback
     def async_stop(self) -> None:
@@ -185,16 +215,22 @@ class HeatPumpAdvisor:
 
     async def _async_refresh_forecast(self) -> None:
         points = await self._async_fetch_forecast()
+        now = dt_util.utcnow()
         if points:
-            self.forecast, self.forecast_error = Forecast(points), None
+            self.forecast, self.forecast_error, self._forecast_at = Forecast(points), None, now
+        elif self.forecast is not None and self._forecast_at is not None and now - self._forecast_at > FORECAST_STALE:
+            # Don't plan on an old forecast for ever: fall back to look ahead until a new one comes.
+            self.forecast, self.plan = None, None
         self._schedule_replan()
         self._update()
 
     async def _async_fetch_forecast(self) -> list[tuple[datetime, float]]:
-        entity = self.weather_entity
-        if not entity or self.hass.states.get(entity) is None:
+        entity = self.weather_entity = self._weather_choice or default_weather_entity(self.hass)
+        state = self.hass.states.get(entity) if entity else None
+        if state is None:
             self.forecast_error = "No weather entity for the temperature forecast"
             return []
+        fahrenheit = state.attributes.get("temperature_unit") == UnitOfTemperature.FAHRENHEIT
         for kind in ("hourly", "twice_daily", "daily"):
             try:
                 resp = await self.hass.services.async_call(
@@ -209,6 +245,8 @@ class HeatPumpAdvisor:
                 t = dt_util.parse_datetime(str(row.get("datetime", "")))
                 temp = row.get("temperature")
                 if t is not None and isinstance(temp, (int, float)):
+                    if fahrenheit:  # heat need settings are in °C
+                        temp = TemperatureConverter.convert(temp, UnitOfTemperature.FAHRENHEIT, UnitOfTemperature.CELSIUS)
                     points.append((dt_util.as_utc(t), float(temp)))
             if points:
                 return points
@@ -279,6 +317,10 @@ class HeatPumpAdvisor:
             if advice.mode != self.sticky.mode:
                 self.sticky.force(now, advice.mode)
             self._provisional = False
+            if self._restored is not None:
+                # After a restart: if the plan carries on with the advice from before it, keep that since.
+                self.restore_since(*self._restored)
+                self._restored = None
         else:
             since = self.sticky.since
             self.sticky.update(now, advice.mode)
@@ -322,6 +364,28 @@ class HeatPumpAdvisor:
         if not since < self.sticky.since <= dt_util.utcnow() + timedelta(minutes=1):
             return False  # nothing older to keep, or a clock that jumped
         self.sticky.since = since
+        return True
+
+    @callback
+    def restore_store(self, store: object, saved_at: datetime | None) -> bool:
+        """After a restart: pick the plan's heat store up where it was.
+
+        Without it the plan starts from an empty store and can end a boost or
+        hold back that is half done. After a long gap (more than ``store_hours``)
+        the house has drifted back to normal anyway, so the store stays at 0.
+        Returns True when the saved store was taken back.
+        """
+        if not self.planning or saved_at is None:
+            return False
+        try:
+            value = float(store)
+        except (TypeError, ValueError):
+            return False
+        gap = dt_util.utcnow() - saved_at
+        if not timedelta(0) <= gap <= timedelta(hours=self.store_hours) or value != value:
+            return False
+        lo, hi = -self.plan_settings.store_limit, self.plan_settings.bank_limit
+        self.store, self._store_at = max(lo, min(hi, value)), dt_util.utcnow()
         return True
 
     def plan_dict(self) -> dict:

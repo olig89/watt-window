@@ -350,7 +350,8 @@ async def ws_save(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
         for key in (CONF_SPARE_GRID_ENTITY, CONF_SPARE_SOLAR_ENTITY, CONF_HP_WEATHER_ENTITY,
                     CONF_HP_BRINE_ENTITY, CONF_HP_ENERGY_ENTITY, CONF_HP_OUTDOOR_ENTITY):
             if key in msg:
-                if msg[key] and hass.states.get(msg[key]) is None:
+                domain = "weather" if key == CONF_HP_WEATHER_ENTITY else "sensor"
+                if msg[key] and (hass.states.get(msg[key]) is None or not msg[key].startswith(f"{domain}.")):
                     raise SettingsError("bad_spare_sensor", key)
                 options[key] = msg[key] or None
         if "heat_pump_advice" in msg:

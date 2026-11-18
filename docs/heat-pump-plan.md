@@ -119,8 +119,10 @@ of a cheap stretch, right before the dear hours it is banking for.
 forecast refresh, from the current S. The minute tick only reads the plan.
 
 **Tracking S.** Watt Window adds up S from the advice it gave and the need at
-each minute. A reload (saving settings) keeps it; after a restart S starts at
-0. If the house automation ends a hold back early (rooms too cold), S reaches
+each minute. A reload (saving settings) keeps it in memory; a restart takes it
+back from the sensor's last `store_kwh`, unless Home Assistant was down for
+longer than `store_hours` (the house has drifted back to normal by then), when
+it starts at 0. If the house automation ends a hold back early (rooms too cold), S reaches
 −C and the plan pays the debt back: the model and the house agree again.
 
 **`since` across a restart.** The advice sensor restores its last state. When

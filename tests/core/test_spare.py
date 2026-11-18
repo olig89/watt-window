@@ -18,7 +18,7 @@ MIN = timedelta(minutes=1)
 
 
 def test_zero_export_held_back_uses_forecast_gap():
-    # Oli's sunny-day pattern: ~60 W import while producing 2.3 kW, forecast 4.5 kW.
+    # A sunny-day pattern from a zero-export system: ~60 W import while producing 2.3 kW, forecast 4.5 kW.
     e = estimate_spare(grid_import_w=60, solar_w=2300, forecast_w=4500, can_export=False)
     assert e.basis == FORECAST_GAP and e.held_back and e.is_guess
     assert e.watts == pytest.approx(2200)

@@ -155,6 +155,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: WattWindowConfigEntry) 
 async def async_remove_entry(hass: HomeAssistant, entry: WattWindowConfigEntry) -> None:
     from homeassistant.components import frontend
 
+    hass.data.get(f"{DOMAIN}_hp_store", {}).pop(entry.entry_id, None)  # the heat pump state kept for reloads
     if hass.data.pop(f"{DOMAIN}_panel", None):
         frontend.async_remove_panel(hass, PANEL_URL)
     if card_url := hass.data.pop(f"{DOMAIN}_card", None):
